@@ -1,0 +1,50 @@
+HEALTHSCALE 1.1.1 UNBOUNDED TRANSFORMATION-DOMAIN REPAIR
+========================================================
+
+STATUS
+------
+SOURCE CANDIDATE COMPLETE. MODEL VALIDATION PASSES.
+MSVC RELEASE BUILD AND LIVE DBXV2 VERIFICATION ARE STILL REQUIRED.
+
+CORRECTED DESIGN DEFECT
+-----------------------
+The 1.1.0 candidate raised the mixed current/max health-domain acceptance limit
+from 8x to 256x. Although this covered Kaioken x20, it still imposed an
+arbitrary maximum transformation strength. Future Super Saiyan God, Super
+Saiyan Blue, stacked, Revamp, or custom transformations could exceed it.
+
+REPAIR
+------
+1. REMOVED THE DOMAIN-RATIO CEILING
+   - `kMaximumTransientHealthRatio` no longer exists.
+   - `IsPlausibleHealthPair` no longer receives or computes a multiplier limit.
+   - Any finite current HP >= -1.0 with a finite positive maximum HP is
+     structurally accepted after Battle_Mob ownership, vtable, and range checks.
+
+2. PRESERVED COHERENCE-BASED TRANSITION LOGIC
+   - An arbitrary mixed-domain pair is not allowed to create a new percentage.
+   - The last coherent current/maximum ratio remains frozen through the
+     transition.
+   - The correction is applied only after the new maximum/domain stabilizes.
+
+3. RETAINED SAFETY BOUNDARIES
+   - Private writable Battle_Mob object validation.
+   - Game-image vtable validation.
+   - Readable/writable memory-range validation.
+   - NaN/infinity rejection.
+   - Positive maximum-HP requirement.
+   - Zero-HP no-revival rule.
+   - Maximum HP is never written.
+
+REGRESSION COVERAGE
+-------------------
+- Kaioken x20 mixed-domain pair.
+- A 100,000,000x-class finite mixed-domain pair.
+- Maximum finite float current HP with positive maximum HP.
+- Negative current, zero maximum, infinity, and NaN rejection.
+- Existing target-rebase, stale-lease, temporary-zero, domain-classification,
+  and HUD-lane tests.
+
+FROZEN SOURCES
+--------------
+The uploaded 1.0.1 archive and the prior 1.1.0 candidate were not modified.

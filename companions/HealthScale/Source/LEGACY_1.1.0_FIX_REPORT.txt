@@ -1,0 +1,69 @@
+HEALTHSCALE 1.1.0 QUEST + LARGE-TRANSFORMATION OVERHAUL
+=======================================================
+
+STATUS
+------
+SOURCE CANDIDATE COMPLETE. MODEL AND SOURCE-SYNTAX VALIDATION PASS.
+MSVC RELEASE BUILD AND LIVE DBXV2 VERIFICATION ARE STILL REQUIRED.
+
+USER-CONFIRMED FAILURES
+-----------------------
+1. Quest enemy HUD health was not normalized/registered like Training and
+   Versus fighters.
+2. Cancelling Kaioken x20 could restore the player to full health.
+
+EVIDENCE-DRIVEN ROOT CAUSES
+---------------------------
+QUEST HUD
+- The existing native hook recognized only five fixed HudCockpit displacements.
+- Quest traffic reached the exact current/max health writer sites but produced
+  unsupported-lane hits, so those writes passed through unnormalized.
+
+KAIOKEN x20 CANCELLATION
+- A detransformation frame exposed current HP in the old x20 domain while
+  maximum HP had already returned to the base domain.
+- The old runtime rejected current/max pairs above an 8x ratio. The observed
+  1,730,925 current / 90,000 maximum pair is about 19.23x, so the fighter could
+  be invalidated during the exact frame needed to preserve health percentage.
+- When current HP later rebased/clamped into the target domain, a full-looking
+  90,000 / 90,000 sample could be mistaken for a new authoritative percentage.
+
+REPAIRS
+-------
+1. LARGE MIXED-DOMAIN ACCEPTANCE
+   - Battle_Mob health validation now permits a bounded transient current/max
+     ratio up to 256x.
+   - The object must still be a private writable game object with a valid game
+     vtable and finite health fields.
+
+2. DETRANSFORMATION REBASE RULE
+   - During a large maximum-health decrease, the first target-domain current-HP
+     sample is treated as a baseline only.
+   - It cannot replace the preserved pre-change percentage.
+   - Example:
+       1,730,925 / 1,800,000 = 96.1625%
+       corrected base HP = 0.961625 * 90,000 = 86,546.25
+
+3. QUEST / ADDITIONAL HUD LANE DISCOVERY
+   - Plausible writes at the exact signature-checked HUD current/max writer sites
+     are normalized even when their displacement is outside the original five
+     fixed lanes.
+   - A fixed-capacity, allocation-free registry records up to 32 discovered
+     displacements for diagnostics.
+   - Each discovered lane owns an independent transition tracker, so maximum-HP
+     changes can preserve displayed percentage instead of using stateless output.
+
+4. DIAGNOSTICS
+   - Reports now include dynamically normalized unsupported-lane hits, registry
+     capacity misses, each discovered displacement, hit counts, values, and
+     transition activity.
+
+SAFETY BOUNDARY
+---------------
+- The native HUD hook still writes only the exact HudCockpit destination used by
+  the displaced health writer instruction.
+- Unknown-lane normalization requires finite, plausible current and maximum HP.
+- Battle_Mob correction writes only current HP at +0x100 after ownership and
+  maximum-health verification. Maximum HP is never written.
+- Zero current HP remains protected and is never revived.
+- The frozen 1.0.1 source archive was not modified.

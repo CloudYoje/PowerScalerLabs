@@ -1,0 +1,57 @@
+HEALTHSCALE 1.0.1 VALIDATION REPORT
+===================================
+
+SCOPE
+-----
+Health-only source tree. No PowerScaler Studio, Saga Workshop, lore/package,
+discovery, Runtime Camera, Project Perception, Ki/stamina, or combat-scaling
+systems are present.
+
+LIVE-RATIO CONTRACT
+-------------------
+1. Each distinct maximum-HP change starts from the live pre-change ratio:
+       current HP / maximum HP
+2. A historical domain lease cannot override that ratio.
+3. Maximum changes that occur while the same correction is still pending remain
+   one staged transition and carry the pending ratio.
+4. Transition damage/healing after the snapshot is applied as a delta only when
+   its source scale is identified.
+
+ZERO-FRAME CONTRACT
+-------------------
+1. A zero frame is rejected before ratio, baseline, domain, last-observed, or
+   stabilization state can advance.
+2. Repeated zero frames hold the last valid ratio.
+3. The first recovered nonzero frame is baseline-only.
+4. The runtime never writes current HP while observed HP is zero.
+
+VALIDATION PERFORMED
+--------------------
+PASS: g++ C++20 transition-model test suite.
+PASS: regression: detransformation ignores stale 62.5052203% lease and starts
+      from live 1965.425 / 4203.245.
+PASS: regression: later 2x -> 3x change ignores stale 46.0152476% lease and
+      starts from live 1772.790 / 4203.245.
+PASS: invalid and overfull live-ratio inputs clamp safely.
+PASS: zero-frame and recovery tests.
+PASS: staged transition, reversion, domain classification, and HUD activity tests.
+PASS: AddressSanitizer + UndefinedBehaviorSanitizer model test run.
+PASS: all six runtime C++ translation units passed Clang C++20 syntax checking
+      with -Wall -Wextra -Wpedantic and Windows declaration stubs.
+PASS: Visual Studio project XML references only existing retained files.
+
+NOT PERFORMED IN THIS ENVIRONMENT
+---------------------------------
+- MSVC Release|x64 link/build.
+- Live DBXV2 verification of the repaired DLL.
+
+EXPECTED NEXT-TEST LOG INVARIANT
+--------------------------------
+For every new distinct maximum-health event:
+
+    MAX-HP CHANGE ... old-ratio=X
+    CORRECTION QUEUED ... preserved-ratio=X ratio-source=live-pre-change
+
+The printed values should match within normal float/log rounding. The
+prior-lease-ratio field may differ; that difference is diagnostic and must no
+longer affect the selected preserved-ratio.

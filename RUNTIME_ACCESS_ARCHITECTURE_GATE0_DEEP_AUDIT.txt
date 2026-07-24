@@ -1,0 +1,27 @@
+PowerScaler Labs — Runtime Access Architecture Gate 0
+
+Static implementation audit:
+PASS - Protocol schema advanced to 7.
+PASS - BattleCore resolution moved behind IBattleCoreLocator.
+PASS - Provider disagreement fails closed.
+PASS - Historical XV2 Patcher route is versioned and isolated.
+PASS - Full provider resolution is strict during acquisition and periodic after activation.
+PASS - Direct DBXV2 provider is an inert research placeholder.
+PASS - Address provenance registry covers BattleCore, fighter type evidence, health, Ki, and stamina anchors.
+PASS - Fighter identity includes process, battle, slot, and acquisition generation.
+PASS - Chronology keys carry fighter identity and generation.
+PASS - Raw memory observations are separate from semantic events.
+PASS - Changed slot pointers are not attributed to the previous fighter generation.
+PASS - Session schema advanced to 7 with raw-memory-observations.jsonl and runtime-access-architecture.json.
+PASS - Observer one-point dead zone removed.
+PASS - compressed-scale-v1 observes a 0.01 change.
+PASS - chronology retains exact raw-bit equality.
+PASS - High-level requests, rejected requests, ReadProcessMemory calls, bytes, and VirtualQueryEx budgets are instrumented per lane.
+PASS - Native import boundary remains query/read/module enumeration only.
+PASS - HealthScale remains a sealed companion.
+
+Environment limitations:
+NOT RUN - Windows .NET/WPF Release compilation.
+NOT RUN - Visual C++ HealthScale build.
+NOT RUN - Architecture self-test executable.
+NOT RUN - DBXV2 attach, fighter acquisition, performance, or detach test.

@@ -1,0 +1,418 @@
+diff -ruN /mnt/data/hsbase/HealthScale-restored-source/FIX_REPORT.txt /mnt/data/hsfix/HealthScale-restored-source/FIX_REPORT.txt
+--- /mnt/data/hsbase/HealthScale-restored-source/FIX_REPORT.txt	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/hsfix/HealthScale-restored-source/FIX_REPORT.txt	2026-07-12 04:24:10.852035121 +0000
+@@ -0,0 +1,66 @@
++HEALTHSCALE 1.0.1 LIVE-RATIO REPAIR
++===================================
++
++PROBLEM CONFIRMED FROM LIVE LOG
++-------------------------------
++A completed health-scale transition left a domain lease active. The lease's
++tracked ratio was updated only while current HP was numerically distinguishable
++from the canonical health range. After ordinary combat damage lowered current HP
++into the overlapping range, the lease stopped tracking the fighter's live ratio.
++
++When the next maximum-HP change began, QueueCorrection preferred that stale lease
++ratio over the live pre-change current/max ratio. This caused unintended healing
++on detransformation and later chained transformations.
++
++FIX
++---
++1. Every distinct maximum-health change now computes its starting percentage
++   exclusively from the live pre-change values:
++
++       ratio = state.currentHp / state.maximumHp
++
++2. The domain lease remains available only to identify/remap late canonical-scale
++   current-HP writes while a scaled maximum is active. It cannot seed a later
++   maximum-health transition.
++3. The queue log identifies the source and exposes the discarded lease value:
++
++       ratio-source=live-pre-change prior-lease-ratio=...
++
++4. Temporary-zero handling is unchanged: zero frames freeze the live ratio and
++   the first recovered nonzero frame is baseline-only.
++5. Same-transition staged maximum changes that occur while one correction is
++   still pending continue to carry the pending ratio. This is intentional and
++   distinct from starting a later health alteration after the previous one has
++   completed.
++
++REGRESSION CASES FROM THE USER'S LOG
++------------------------------------
++Case A: detransformation
++    live pre-change: 1965.425 / 4203.245 ~= 46.7597%
++    stale lease:                              62.5052%
++    new maximum: 2101.622
++    fixed starting result: approximately 982.712 HP before any later delta
++
++Case B: later 2x -> 3x transformation
++    live pre-change: 1772.790 / 4203.245 ~= 42.1767%
++    stale lease:                              46.0152%
++    new maximum: 6304.867
++    fixed starting result: approximately 2659.185 HP before transition damage
++
++VALIDATION
++----------
++PASS: pure C++20 transition-model tests.
++PASS: both live-log stale-lease regression cases.
++PASS: zero-on-entry, repeated-zero, recovery-baseline, and post-recovery damage.
++PASS: AddressSanitizer and UndefinedBehaviorSanitizer model test run.
++PASS: all six runtime translation units passed Clang C++20 syntax checking with
++      warnings enabled and Windows declaration stubs.
++PASS: no PowerScaler Studio, Saga Workshop, lore, discovery, camera, perception,
++      Ki/stamina, or combat-scaling source was reintroduced.
++
++REMAINING LIVE TEST
++-------------------
++Build Release|x64 in Visual Studio, install the new xinput_other.dll, clear the
++old HealthScale.Runtime.log, then repeat the same transformation sequence. For
++each new CORRECTION QUEUED line, preserved-ratio must match the immediately
++preceding MAX-HP CHANGE old-ratio (apart from printed float precision).
+diff -ruN /mnt/data/hsbase/HealthScale-restored-source/README.md /mnt/data/hsfix/HealthScale-restored-source/README.md
+--- /mnt/data/hsbase/HealthScale-restored-source/README.md	2026-07-12 03:56:13.000000000 +0000
++++ /mnt/data/hsfix/HealthScale-restored-source/README.md	2026-07-12 04:24:10.851562409 +0000
+@@ -23,6 +23,22 @@
+ Camera, discovery modes, Project Perception, causal probes, scanners, Ki,
+ stamina, combat scaling and all managed UI projects.
+ 
++
++## Live pre-change ratio rule
++
++Every distinct maximum-HP change now starts from the fighter's live percentage
++immediately before the change:
++
++```text
++live ratio = current HP / maximum HP
++corrected current HP = live ratio * new maximum HP
++```
++
++A prior transformation/domain lease may still retain an older percentage for
++late-write remapping, but it is never allowed to seed a later transformation,
++detransformation, Super Soul activation, or other maximum-health alteration.
++This prevents stale-ratio healing after normal damage between health changes.
++
+ ## Zero-frame rule
+ 
+ A zero-current-HP frame during a pending maximum-health transition cannot alter
+diff -ruN /mnt/data/hsbase/HealthScale-restored-source/VALIDATION_REPORT.txt /mnt/data/hsfix/HealthScale-restored-source/VALIDATION_REPORT.txt
+--- /mnt/data/hsbase/HealthScale-restored-source/VALIDATION_REPORT.txt	2026-07-12 04:01:55.000000000 +0000
++++ /mnt/data/hsfix/HealthScale-restored-source/VALIDATION_REPORT.txt	2026-07-12 04:24:10.852287792 +0000
+@@ -1,100 +1,57 @@
+-HEALTHSCALE RESTORATION AND ZERO-FRAME VALIDATION
+-================================================
++HEALTHSCALE 1.0.1 VALIDATION REPORT
++===================================
+ 
+-SOURCE
+-------
+-Input archive: XV2PowerScaler-master(1).zip
+-Original files: 488
+-HealthScale files after purge: 20
+-
+-PURGE RESULT
+-------------
+-Removed the managed Studio, Saga Workshop, lore/profile/package systems,
+-Runtime Camera, discovery modes, Project Perception, causal probes, scanners,
+-Ki/stamina systems, combat scaling, and the entire native power_scaler tree.
+-
+-The retained Visual Studio project contains only six C++ translation units:
+-- dllmain.cpp
+-- health_overhaul_runtime.cpp
+-- health_transition_model.cpp
+-- hud_health_normalizer.cpp
+-- logger.cpp
+-- xinput_proxy.cpp
++SCOPE
++-----
++Health-only source tree. No PowerScaler Studio, Saga Workshop, lore/package,
++discovery, Runtime Camera, Project Perception, Ki/stamina, or combat-scaling
++systems are present.
++
++LIVE-RATIO CONTRACT
++-------------------
++1. Each distinct maximum-HP change starts from the live pre-change ratio:
++       current HP / maximum HP
++2. A historical domain lease cannot override that ratio.
++3. Maximum changes that occur while the same correction is still pending remain
++   one staged transition and carry the pending ratio.
++4. Transition damage/healing after the snapshot is applied as a delta only when
++   its source scale is identified.
+ 
+ ZERO-FRAME CONTRACT
+ -------------------
+-1. A pending health transition whose observed current HP becomes zero is
+-   classified as TemporaryZero before ratio, baseline, source domain,
+-   last-observed sample, or stabilization state can advance.
+-2. The last valid nonzero ratio is frozen.
+-3. Repeated zero frames continue to hold that ratio.
+-4. The first recovered nonzero frame is RecoveryBaseline. It establishes a
+-   new source baseline but contributes no healing or damage delta.
+-5. Only later nonzero movement contributes damage or healing.
+-6. The runtime never writes current HP while the observed value is zero.
+-   A persistent real death therefore times out/cancels instead of being revived.
+-7. The native HUD normalization hook follows the same zero/recovery behavior,
+-   so a transition-owned zero frame does not collapse the normalized bar.
+-
+-EQUATION CHECK
+---------------
+-Before transformation:
+-    current = 1985.548
+-    maximum = 2056.356
+-    ratio   = 0.965566273544075
+-    percent = 96.556627354407%
+-
+-After maximum changes to 4112.713:
+-    corrected current = ratio * 4112.713
+-                      = 3971.096965566273
+-    verified ratio    = 0.965566273544075
+-    percentage drift  = 0 within the calculation precision shown
+-
+-During a zero frame:
+-    observed current = 0
+-    held ratio       = 0.965566273544075
+-    delta ratio      = 0
++1. A zero frame is rejected before ratio, baseline, domain, last-observed, or
++   stabilization state can advance.
++2. Repeated zero frames hold the last valid ratio.
++3. The first recovered nonzero frame is baseline-only.
++4. The runtime never writes current HP while observed HP is zero.
+ 
+ VALIDATION PERFORMED
+ --------------------
+-PASS: health_transition_model_tests with g++ C++20.
+-PASS: zero-on-entry classification.
+-PASS: repeated-zero classification.
+-PASS: recovery-baseline classification.
+-PASS: zero frame leaves ratio and delta unchanged.
+-PASS: recovery baseline leaves ratio unchanged.
+-PASS: post-recovery damage changes ratio normally.
+-PASS: all six C++ translation units passed Clang C++20 syntax checking with
+-      Windows API declaration stubs and -Wall -Wextra -Wpedantic.
+-PASS: HealthScale.Runtime.vcxproj is valid XML and references no missing files.
+-PASS: no source/build references remain to PowerScaler, Saga Workshop, lore,
+-      discovery, Runtime Camera, Project Perception, or power_scaler/.
+-
+-NOT YET PERFORMED
+------------------
+-- A real MSVC Release|x64 link/build in Visual Studio.
+-- Live DBXV2 transformation, detransformation, Super Soul, defeat, revive, and
+-  Training Mode testing.
+-
+-FILES
+------
+-HealthScale.sln
+-PURGE_REPORT.txt
+-README.md
+-src/native/HealthScale.Runtime/HealthScale.Runtime.def
+-src/native/HealthScale.Runtime/HealthScale.Runtime.vcxproj
+-src/native/HealthScale.Runtime/HealthScale.ini
+-src/native/HealthScale.Runtime/README.md
+-src/native/HealthScale.Runtime/src/dllmain.cpp
+-src/native/HealthScale.Runtime/src/health_overhaul_runtime.cpp
+-src/native/HealthScale.Runtime/src/health_overhaul_runtime.h
+-src/native/HealthScale.Runtime/src/health_transition_model.cpp
+-src/native/HealthScale.Runtime/src/health_transition_model.h
+-src/native/HealthScale.Runtime/src/hud_health_normalizer.cpp
+-src/native/HealthScale.Runtime/src/hud_health_normalizer.h
+-src/native/HealthScale.Runtime/src/logger.cpp
+-src/native/HealthScale.Runtime/src/logger.h
+-src/native/HealthScale.Runtime/src/version.rc
+-src/native/HealthScale.Runtime/src/xinput_proxy.cpp
+-src/native/HealthScale.Runtime/src/xinput_proxy.h
+-tests/native/health_transition_model_tests.cpp
++PASS: g++ C++20 transition-model test suite.
++PASS: regression: detransformation ignores stale 62.5052203% lease and starts
++      from live 1965.425 / 4203.245.
++PASS: regression: later 2x -> 3x change ignores stale 46.0152476% lease and
++      starts from live 1772.790 / 4203.245.
++PASS: invalid and overfull live-ratio inputs clamp safely.
++PASS: zero-frame and recovery tests.
++PASS: staged transition, reversion, domain classification, and HUD activity tests.
++PASS: AddressSanitizer + UndefinedBehaviorSanitizer model test run.
++PASS: all six runtime C++ translation units passed Clang C++20 syntax checking
++      with -Wall -Wextra -Wpedantic and Windows declaration stubs.
++PASS: Visual Studio project XML references only existing retained files.
++
++NOT PERFORMED IN THIS ENVIRONMENT
++---------------------------------
++- MSVC Release|x64 link/build.
++- Live DBXV2 verification of the repaired DLL.
++
++EXPECTED NEXT-TEST LOG INVARIANT
++--------------------------------
++For every new distinct maximum-health event:
++
++    MAX-HP CHANGE ... old-ratio=X
++    CORRECTION QUEUED ... preserved-ratio=X ratio-source=live-pre-change
++
++The printed values should match within normal float/log rounding. The
++prior-lease-ratio field may differ; that difference is diagnostic and must no
++longer affect the selected preserved-ratio.
+diff -ruN /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/README.md /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/README.md
+--- /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/README.md	2026-07-12 03:56:13.000000000 +0000
++++ /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/README.md	2026-07-12 04:24:10.851771954 +0000
+@@ -46,3 +46,18 @@
+   -o health_transition_model_tests
+ ./health_transition_model_tests
+ ```
++
++## Maximum-change authority
++
++When a new maximum-health change is detected, HealthScale snapshots the live
++pre-change `current / maximum` ratio. Historical domain-lease ratios are logged
++for comparison but are not used as the starting percentage. The queue log now
++contains:
++
++```text
++ratio-source=live-pre-change prior-lease-ratio=...
++```
++
++This makes chained transformations and detransformations preserve the health
++percentage that actually existed immediately before each distinct change.
++
+diff -ruN /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_overhaul_runtime.cpp /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_overhaul_runtime.cpp
+--- /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_overhaul_runtime.cpp	2026-07-12 04:00:33.000000000 +0000
++++ /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_overhaul_runtime.cpp	2026-07-12 04:22:44.014628962 +0000
+@@ -474,12 +474,19 @@
+     const float canonicalMaximumHp = continuingLease
+         ? state.domainLease.canonicalMaximumHp
+         : state.maximumHp;
+-    const double ratio = continuingLease
++    // Every distinct maximum-health change starts from the fighter's live
++    // percentage immediately before that change. A domain lease exists only
++    // to remap late canonical-scale writes while a maximum is already scaled;
++    // its tracked ratio is not authoritative for a later transformation. In
++    // particular, the lease can stop receiving absolute target-domain updates
++    // once current HP numerically overlaps the canonical range. Reusing it here
++    // would resurrect an older, higher percentage and heal the fighter.
++    const double livePreChangeRatio = hs::ComputeLiveHealthRatio(
++        state.currentHp, state.maximumHp);
++    const double priorLeaseRatio = continuingLease
+         ? std::clamp(state.domainLease.trackedRatio, 0.0, 1.0)
+-        : (state.maximumHp > 0.0f
+-            ? std::clamp(static_cast<double>(state.currentHp) /
+-                         static_cast<double>(state.maximumHp), 0.0, 1.0)
+-            : 0.0);
++        : livePreChangeRatio;
++    const double ratio = livePreChangeRatio;
+ 
+     state.pending.active = true;
+     state.pending.mob = state.mob;
+@@ -546,12 +553,13 @@
+     hs::Log(L"CORRECTION QUEUED slot=%zu mob=0x%p direction=%ls "
+             L"old-current=%.3f old-max=%.3f observed-current=%.3f "
+             L"new-max=%.3f transition-baseline=%.3f baseline-scale=%.3f "
+-            L"preserved-ratio=%.9f canonical-max=%.3f hud-lane=%zu",
++            L"preserved-ratio=%.9f ratio-source=live-pre-change "
++            L"prior-lease-ratio=%.9f canonical-max=%.3f hud-lane=%zu",
+             slot, reinterpret_cast<void*>(state.mob),
+             increase ? L"increase" : L"decrease", state.currentHp,
+             state.maximumHp, newCurrentHp, newMaximumHp,
+             state.pending.transitionBaselineCurrentHp,
+-            state.pending.transitionBaselineScaleHp, ratio,
++            state.pending.transitionBaselineScaleHp, ratio, priorLeaseRatio,
+             state.pending.canonicalMaximumHp, hudLane);
+ }
+ 
+diff -ruN /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.cpp /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.cpp
+--- /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.cpp	2026-07-12 04:00:11.000000000 +0000
++++ /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.cpp	2026-07-12 04:22:44.015788379 +0000
+@@ -89,6 +89,17 @@
+     return result;
+ }
+ 
++double ComputeLiveHealthRatio(
++    float currentHp,
++    float maximumHp) noexcept {
++    if (!std::isfinite(currentHp) || !std::isfinite(maximumHp) ||
++        maximumHp <= 0.0f) {
++        return 0.0;
++    }
++    return ClampRatio(
++        static_cast<double>(currentHp) / static_cast<double>(maximumHp));
++}
++
+ float SelectTransitionCurrentScale(
+     bool increase,
+     float oldMaximumHp,
+diff -ruN /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.h /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.h
+--- /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.h	2026-07-12 04:00:11.000000000 +0000
++++ /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.h	2026-07-12 04:22:44.015351100 +0000
+@@ -48,6 +48,13 @@
+     float observedCurrentHp,
+     bool maximumJustChanged) noexcept;
+ 
++// Returns the authoritative percentage immediately before a distinct
++// maximum-health change. This intentionally uses only the live current and
++// maximum values; historical transition/domain state must not override it.
++[[nodiscard]] double ComputeLiveHealthRatio(
++    float currentHp,
++    float maximumHp) noexcept;
++
+ [[nodiscard]] float SelectTransitionCurrentScale(
+     bool increase,
+     float oldMaximumHp,
+diff -ruN /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/version.rc /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/version.rc
+--- /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/version.rc	2026-07-12 03:57:02.000000000 +0000
++++ /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/version.rc	2026-07-12 04:24:10.851248956 +0000
+@@ -1,8 +1,8 @@
+ #include <windows.h>
+ 
+ VS_VERSION_INFO VERSIONINFO
+- FILEVERSION 1,0,0,0
+- PRODUCTVERSION 1,0,0,0
++ FILEVERSION 1,0,1,0
++ PRODUCTVERSION 1,0,1,0
+  FILEFLAGSMASK 0x3fL
+ #ifdef _DEBUG
+  FILEFLAGS 0x1L
+@@ -19,11 +19,11 @@
+         BEGIN
+             VALUE "CompanyName", "HealthScale Project\0"
+             VALUE "FileDescription", "HealthScale Native Runtime\0"
+-            VALUE "FileVersion", "1.0.0.0\0"
++            VALUE "FileVersion", "1.0.1.0\0"
+             VALUE "InternalName", "xinput_other.dll\0"
+             VALUE "OriginalFilename", "xinput_other.dll\0"
+             VALUE "ProductName", "HealthScale Runtime\0"
+-            VALUE "ProductVersion", "1.0.0\0"
++            VALUE "ProductVersion", "1.0.1\0"
+         END
+     END
+     BLOCK "VarFileInfo"
+diff -ruN /mnt/data/hsbase/HealthScale-restored-source/tests/native/health_transition_model_tests.cpp /mnt/data/hsfix/HealthScale-restored-source/tests/native/health_transition_model_tests.cpp
+--- /mnt/data/hsbase/HealthScale-restored-source/tests/native/health_transition_model_tests.cpp	2026-07-12 04:00:11.000000000 +0000
++++ /mnt/data/hsfix/HealthScale-restored-source/tests/native/health_transition_model_tests.cpp	2026-07-12 04:23:01.622441566 +0000
+@@ -134,6 +134,32 @@
+     ExpectNear(postReversionDamage.ratio,
+                0.739557454 - 100.0 / revertedMaximum, 1.0e-5);
+ 
++    // Regression from the live 2026-07-11 report: a completed 2x health
++    // transition left a domain lease at an older 62.5052203%, while the
++    // fighter had since fallen to 1965.425 / 4203.245 = 46.7597083%. A new
++    // detransformation must start from the live percentage, never the lease.
++    const double liveDetransformRatio = ComputeLiveHealthRatio(
++        1965.425f, 4203.245f);
++    ExpectNear(liveDetransformRatio, 0.467597083, 1.0e-6);
++    const double staleDetransformLease = 0.625052203;
++    assert(std::fabs(liveDetransformRatio - staleDetransformLease) > 0.15);
++    ExpectNear(liveDetransformRatio * 2101.622, 982.712, 0.01);
++
++    // Regression from the same report: a later 2x -> 3x change occurred at
++    // 1772.790 / 4203.245 = 42.1767126%, but the old lease still held
++    // 46.0152476%. The new transition must preserve the live 42.1767%.
++    const double liveChainRatio = ComputeLiveHealthRatio(
++        1772.790f, 4203.245f);
++    ExpectNear(liveChainRatio, 0.421767126, 1.0e-6);
++    const double staleChainLease = 0.460152476;
++    assert(std::fabs(liveChainRatio - staleChainLease) > 0.03);
++    ExpectNear(liveChainRatio * 6304.867, 2659.186, 0.02);
++
++    // Invalid live health never imports a historical ratio by accident.
++    ExpectNear(ComputeLiveHealthRatio(100.0f, 0.0f), 0.0, 0.0);
++    ExpectNear(ComputeLiveHealthRatio(-10.0f, 100.0f), 0.0, 0.0);
++    ExpectNear(ComputeLiveHealthRatio(150.0f, 100.0f), 1.0, 0.0);
++
+     assert(!IsHudLanePresentationLatched(0));
+     assert(IsHudLanePresentationLatched(1234));
+     // A stale writer heartbeat does not clear the HUD-presence latch. The two

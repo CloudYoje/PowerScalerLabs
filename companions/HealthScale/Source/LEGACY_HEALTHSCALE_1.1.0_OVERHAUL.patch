@@ -1,0 +1,1664 @@
+diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/FIX_REPORT.txt HealthScale-1.1.0-quest-overhaul-source/FIX_REPORT.txt
+--- HealthScale-1.0.1-fixed-source/FIX_REPORT.txt	2026-07-12 04:24:10.000000000 +0000
++++ HealthScale-1.1.0-quest-overhaul-source/FIX_REPORT.txt	2026-07-18 00:19:33.450444552 +0000
+@@ -1,66 +1,69 @@
+-HEALTHSCALE 1.0.1 LIVE-RATIO REPAIR
+-===================================
++HEALTHSCALE 1.1.0 QUEST + LARGE-TRANSFORMATION OVERHAUL
++=======================================================
+ 
+-PROBLEM CONFIRMED FROM LIVE LOG
+--------------------------------
+-A completed health-scale transition left a domain lease active. The lease's
+-tracked ratio was updated only while current HP was numerically distinguishable
+-from the canonical health range. After ordinary combat damage lowered current HP
+-into the overlapping range, the lease stopped tracking the fighter's live ratio.
+-
+-When the next maximum-HP change began, QueueCorrection preferred that stale lease
+-ratio over the live pre-change current/max ratio. This caused unintended healing
+-on detransformation and later chained transformations.
+-
+-FIX
+----
+-1. Every distinct maximum-health change now computes its starting percentage
+-   exclusively from the live pre-change values:
+-
+-       ratio = state.currentHp / state.maximumHp
+-
+-2. The domain lease remains available only to identify/remap late canonical-scale
+-   current-HP writes while a scaled maximum is active. It cannot seed a later
+-   maximum-health transition.
+-3. The queue log identifies the source and exposes the discarded lease value:
+-
+-       ratio-source=live-pre-change prior-lease-ratio=...
+-
+-4. Temporary-zero handling is unchanged: zero frames freeze the live ratio and
+-   the first recovered nonzero frame is baseline-only.
+-5. Same-transition staged maximum changes that occur while one correction is
+-   still pending continue to carry the pending ratio. This is intentional and
+-   distinct from starting a later health alteration after the previous one has
+-   completed.
+-
+-REGRESSION CASES FROM THE USER'S LOG
+-------------------------------------
+-Case A: detransformation
+-    live pre-change: 1965.425 / 4203.245 ~= 46.7597%
+-    stale lease:                              62.5052%
+-    new maximum: 2101.622
+-    fixed starting result: approximately 982.712 HP before any later delta
+-
+-Case B: later 2x -> 3x transformation
+-    live pre-change: 1772.790 / 4203.245 ~= 42.1767%
+-    stale lease:                              46.0152%
+-    new maximum: 6304.867
+-    fixed starting result: approximately 2659.185 HP before transition damage
+-
+-VALIDATION
+-----------
+-PASS: pure C++20 transition-model tests.
+-PASS: both live-log stale-lease regression cases.
+-PASS: zero-on-entry, repeated-zero, recovery-baseline, and post-recovery damage.
+-PASS: AddressSanitizer and UndefinedBehaviorSanitizer model test run.
+-PASS: all six runtime translation units passed Clang C++20 syntax checking with
+-      warnings enabled and Windows declaration stubs.
+-PASS: no PowerScaler Studio, Saga Workshop, lore, discovery, camera, perception,
+-      Ki/stamina, or combat-scaling source was reintroduced.
+-
+-REMAINING LIVE TEST
+--------------------
+-Build Release|x64 in Visual Studio, install the new xinput_other.dll, clear the
+-old HealthScale.Runtime.log, then repeat the same transformation sequence. For
+-each new CORRECTION QUEUED line, preserved-ratio must match the immediately
+-preceding MAX-HP CHANGE old-ratio (apart from printed float precision).
++STATUS
++------
++SOURCE CANDIDATE COMPLETE. MODEL AND SOURCE-SYNTAX VALIDATION PASS.
++MSVC RELEASE BUILD AND LIVE DBXV2 VERIFICATION ARE STILL REQUIRED.
++
++USER-CONFIRMED FAILURES
++-----------------------
++1. Quest enemy HUD health was not normalized/registered like Training and
++   Versus fighters.
++2. Cancelling Kaioken x20 could restore the player to full health.
++
++EVIDENCE-DRIVEN ROOT CAUSES
++---------------------------
++QUEST HUD
++- The existing native hook recognized only five fixed HudCockpit displacements.
++- Quest traffic reached the exact current/max health writer sites but produced
++  unsupported-lane hits, so those writes passed through unnormalized.
++
++KAIOKEN x20 CANCELLATION
++- A detransformation frame exposed current HP in the old x20 domain while
++  maximum HP had already returned to the base domain.
++- The old runtime rejected current/max pairs above an 8x ratio. The observed
++  1,730,925 current / 90,000 maximum pair is about 19.23x, so the fighter could
++  be invalidated during the exact frame needed to preserve health percentage.
++- When current HP later rebased/clamped into the target domain, a full-looking
++  90,000 / 90,000 sample could be mistaken for a new authoritative percentage.
++
++REPAIRS
++-------
++1. LARGE MIXED-DOMAIN ACCEPTANCE
++   - Battle_Mob health validation now permits a bounded transient current/max
++     ratio up to 256x.
++   - The object must still be a private writable game object with a valid game
++     vtable and finite health fields.
++
++2. DETRANSFORMATION REBASE RULE
++   - During a large maximum-health decrease, the first target-domain current-HP
++     sample is treated as a baseline only.
++   - It cannot replace the preserved pre-change percentage.
++   - Example:
++       1,730,925 / 1,800,000 = 96.1625%
++       corrected base HP = 0.961625 * 90,000 = 86,546.25
++
++3. QUEST / ADDITIONAL HUD LANE DISCOVERY
++   - Plausible writes at the exact signature-checked HUD current/max writer sites
++     are normalized even when their displacement is outside the original five
++     fixed lanes.
++   - A fixed-capacity, allocation-free registry records up to 32 discovered
++     displacements for diagnostics.
++   - Each discovered lane owns an independent transition tracker, so maximum-HP
++     changes can preserve displayed percentage instead of using stateless output.
++
++4. DIAGNOSTICS
++   - Reports now include dynamically normalized unsupported-lane hits, registry
++     capacity misses, each discovered displacement, hit counts, values, and
++     transition activity.
++
++SAFETY BOUNDARY
++---------------
++- The native HUD hook still writes only the exact HudCockpit destination used by
++  the displaced health writer instruction.
++- Unknown-lane normalization requires finite, plausible current and maximum HP.
++- Battle_Mob correction writes only current HP at +0x100 after ownership and
++  maximum-health verification. Maximum HP is never written.
++- Zero current HP remains protected and is never revived.
++- The frozen 1.0.1 source archive was not modified.
+diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/HEALTHSCALE_1.1.0_OVERHAUL.patch HealthScale-1.1.0-quest-overhaul-source/HEALTHSCALE_1.1.0_OVERHAUL.patch
+--- HealthScale-1.0.1-fixed-source/HEALTHSCALE_1.1.0_OVERHAUL.patch	1970-01-01 00:00:00.000000000 +0000
++++ HealthScale-1.1.0-quest-overhaul-source/HEALTHSCALE_1.1.0_OVERHAUL.patch	2026-07-18 00:19:33.484125459 +0000
+@@ -0,0 +1,138 @@
++diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/FIX_REPORT.txt HealthScale-1.1.0-quest-overhaul-source/FIX_REPORT.txt
++--- HealthScale-1.0.1-fixed-source/FIX_REPORT.txt	2026-07-12 04:24:10.000000000 +0000
+++++ HealthScale-1.1.0-quest-overhaul-source/FIX_REPORT.txt	2026-07-18 00:19:33.450444552 +0000
++@@ -1,66 +1,69 @@
++-HEALTHSCALE 1.0.1 LIVE-RATIO REPAIR
++-===================================
+++HEALTHSCALE 1.1.0 QUEST + LARGE-TRANSFORMATION OVERHAUL
+++=======================================================
++ 
++-PROBLEM CONFIRMED FROM LIVE LOG
++--------------------------------
++-A completed health-scale transition left a domain lease active. The lease's
++-tracked ratio was updated only while current HP was numerically distinguishable
++-from the canonical health range. After ordinary combat damage lowered current HP
++-into the overlapping range, the lease stopped tracking the fighter's live ratio.
++-
++-When the next maximum-HP change began, QueueCorrection preferred that stale lease
++-ratio over the live pre-change current/max ratio. This caused unintended healing
++-on detransformation and later chained transformations.
++-
++-FIX
++----
++-1. Every distinct maximum-health change now computes its starting percentage
++-   exclusively from the live pre-change values:
++-
++-       ratio = state.currentHp / state.maximumHp
++-
++-2. The domain lease remains available only to identify/remap late canonical-scale
++-   current-HP writes while a scaled maximum is active. It cannot seed a later
++-   maximum-health transition.
++-3. The queue log identifies the source and exposes the discarded lease value:
++-
++-       ratio-source=live-pre-change prior-lease-ratio=...
++-
++-4. Temporary-zero handling is unchanged: zero frames freeze the live ratio and
++-   the first recovered nonzero frame is baseline-only.
++-5. Same-transition staged maximum changes that occur while one correction is
++-   still pending continue to carry the pending ratio. This is intentional and
++-   distinct from starting a later health alteration after the previous one has
++-   completed.
++-
++-REGRESSION CASES FROM THE USER'S LOG
++-------------------------------------
++-Case A: detransformation
++-    live pre-change: 1965.425 / 4203.245 ~= 46.7597%
++-    stale lease:                              62.5052%
++-    new maximum: 2101.622
++-    fixed starting result: approximately 982.712 HP before any later delta
++-
++-Case B: later 2x -> 3x transformation
++-    live pre-change: 1772.790 / 4203.245 ~= 42.1767%
++-    stale lease:                              46.0152%
++-    new maximum: 6304.867
++-    fixed starting result: approximately 2659.185 HP before transition damage
++-
++-VALIDATION
++-----------
++-PASS: pure C++20 transition-model tests.
++-PASS: both live-log stale-lease regression cases.
++-PASS: zero-on-entry, repeated-zero, recovery-baseline, and post-recovery damage.
++-PASS: AddressSanitizer and UndefinedBehaviorSanitizer model test run.
++-PASS: all six runtime translation units passed Clang C++20 syntax checking with
++-      warnings enabled and Windows declaration stubs.
++-PASS: no PowerScaler Studio, Saga Workshop, lore, discovery, camera, perception,
++-      Ki/stamina, or combat-scaling source was reintroduced.
++-
++-REMAINING LIVE TEST
++--------------------
++-Build Release|x64 in Visual Studio, install the new xinput_other.dll, clear the
++-old HealthScale.Runtime.log, then repeat the same transformation sequence. For
++-each new CORRECTION QUEUED line, preserved-ratio must match the immediately
++-preceding MAX-HP CHANGE old-ratio (apart from printed float precision).
+++STATUS
+++------
+++SOURCE CANDIDATE COMPLETE. MODEL AND SOURCE-SYNTAX VALIDATION PASS.
+++MSVC RELEASE BUILD AND LIVE DBXV2 VERIFICATION ARE STILL REQUIRED.
+++
+++USER-CONFIRMED FAILURES
+++-----------------------
+++1. Quest enemy HUD health was not normalized/registered like Training and
+++   Versus fighters.
+++2. Cancelling Kaioken x20 could restore the player to full health.
+++
+++EVIDENCE-DRIVEN ROOT CAUSES
+++---------------------------
+++QUEST HUD
+++- The existing native hook recognized only five fixed HudCockpit displacements.
+++- Quest traffic reached the exact current/max health writer sites but produced
+++  unsupported-lane hits, so those writes passed through unnormalized.
+++
+++KAIOKEN x20 CANCELLATION
+++- A detransformation frame exposed current HP in the old x20 domain while
+++  maximum HP had already returned to the base domain.
+++- The old runtime rejected current/max pairs above an 8x ratio. The observed
+++  1,730,925 current / 90,000 maximum pair is about 19.23x, so the fighter could
+++  be invalidated during the exact frame needed to preserve health percentage.
+++- When current HP later rebased/clamped into the target domain, a full-looking
+++  90,000 / 90,000 sample could be mistaken for a new authoritative percentage.
+++
+++REPAIRS
+++-------
+++1. LARGE MIXED-DOMAIN ACCEPTANCE
+++   - Battle_Mob health validation now permits a bounded transient current/max
+++     ratio up to 256x.
+++   - The object must still be a private writable game object with a valid game
+++     vtable and finite health fields.
+++
+++2. DETRANSFORMATION REBASE RULE
+++   - During a large maximum-health decrease, the first target-domain current-HP
+++     sample is treated as a baseline only.
+++   - It cannot replace the preserved pre-change percentage.
+++   - Example:
+++       1,730,925 / 1,800,000 = 96.1625%
+++       corrected base HP = 0.961625 * 90,000 = 86,546.25
+++
+++3. QUEST / ADDITIONAL HUD LANE DISCOVERY
+++   - Plausible writes at the exact signature-checked HUD current/max writer sites
+++     are normalized even when their displacement is outside the original five
+++     fixed lanes.
+++   - A fixed-capacity, allocation-free registry records up to 32 discovered
+++     displacements for diagnostics.
+++   - Each discovered lane owns an independent transition tracker, so maximum-HP
+++     changes can preserve displayed percentage instead of using stateless output.
+++
+++4. DIAGNOSTICS
+++   - Reports now include dynamically normalized unsupported-lane hits, registry
+++     capacity misses, each discovered displacement, hit counts, values, and
+++     transition activity.
+++
+++SAFETY BOUNDARY
+++---------------
+++- The native HUD hook still writes only the exact HudCockpit destination used by
+++  the displaced health writer instruction.
+++- Unknown-lane normalization requires finite, plausible current and maximum HP.
+++- Battle_Mob correction writes only current HP at +0x100 after ownership and
+++  maximum-health verification. Maximum HP is never written.
+++- Zero current HP remains protected and is never revived.
+++- The frozen 1.0.1 source archive was not modified.
+diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/LIVE_RATIO_FIX.patch HealthScale-1.1.0-quest-overhaul-source/LIVE_RATIO_FIX.patch
+--- HealthScale-1.0.1-fixed-source/LIVE_RATIO_FIX.patch	2026-07-12 04:24:32.000000000 +0000
++++ HealthScale-1.1.0-quest-overhaul-source/LIVE_RATIO_FIX.patch	1970-01-01 00:00:00.000000000 +0000
+@@ -1,418 +0,0 @@
+-diff -ruN /mnt/data/hsbase/HealthScale-restored-source/FIX_REPORT.txt /mnt/data/hsfix/HealthScale-restored-source/FIX_REPORT.txt
+---- /mnt/data/hsbase/HealthScale-restored-source/FIX_REPORT.txt	1970-01-01 00:00:00.000000000 +0000
+-+++ /mnt/data/hsfix/HealthScale-restored-source/FIX_REPORT.txt	2026-07-12 04:24:10.852035121 +0000
+-@@ -0,0 +1,66 @@
+-+HEALTHSCALE 1.0.1 LIVE-RATIO REPAIR
+-+===================================
+-+
+-+PROBLEM CONFIRMED FROM LIVE LOG
+-+-------------------------------
+-+A completed health-scale transition left a domain lease active. The lease's
+-+tracked ratio was updated only while current HP was numerically distinguishable
+-+from the canonical health range. After ordinary combat damage lowered current HP
+-+into the overlapping range, the lease stopped tracking the fighter's live ratio.
+-+
+-+When the next maximum-HP change began, QueueCorrection preferred that stale lease
+-+ratio over the live pre-change current/max ratio. This caused unintended healing
+-+on detransformation and later chained transformations.
+-+
+-+FIX
+-+---
+-+1. Every distinct maximum-health change now computes its starting percentage
+-+   exclusively from the live pre-change values:
+-+
+-+       ratio = state.currentHp / state.maximumHp
+-+
+-+2. The domain lease remains available only to identify/remap late canonical-scale
+-+   current-HP writes while a scaled maximum is active. It cannot seed a later
+-+   maximum-health transition.
+-+3. The queue log identifies the source and exposes the discarded lease value:
+-+
+-+       ratio-source=live-pre-change prior-lease-ratio=...
+-+
+-+4. Temporary-zero handling is unchanged: zero frames freeze the live ratio and
+-+   the first recovered nonzero frame is baseline-only.
+-+5. Same-transition staged maximum changes that occur while one correction is
+-+   still pending continue to carry the pending ratio. This is intentional and
+-+   distinct from starting a later health alteration after the previous one has
+-+   completed.
+-+
+-+REGRESSION CASES FROM THE USER'S LOG
+-+------------------------------------
+-+Case A: detransformation
+-+    live pre-change: 1965.425 / 4203.245 ~= 46.7597%
+-+    stale lease:                              62.5052%
+-+    new maximum: 2101.622
+-+    fixed starting result: approximately 982.712 HP before any later delta
+-+
+-+Case B: later 2x -> 3x transformation
+-+    live pre-change: 1772.790 / 4203.245 ~= 42.1767%
+-+    stale lease:                              46.0152%
+-+    new maximum: 6304.867
+-+    fixed starting result: approximately 2659.185 HP before transition damage
+-+
+-+VALIDATION
+-+----------
+-+PASS: pure C++20 transition-model tests.
+-+PASS: both live-log stale-lease regression cases.
+-+PASS: zero-on-entry, repeated-zero, recovery-baseline, and post-recovery damage.
+-+PASS: AddressSanitizer and UndefinedBehaviorSanitizer model test run.
+-+PASS: all six runtime translation units passed Clang C++20 syntax checking with
+-+      warnings enabled and Windows declaration stubs.
+-+PASS: no PowerScaler Studio, Saga Workshop, lore, discovery, camera, perception,
+-+      Ki/stamina, or combat-scaling source was reintroduced.
+-+
+-+REMAINING LIVE TEST
+-+-------------------
+-+Build Release|x64 in Visual Studio, install the new xinput_other.dll, clear the
+-+old HealthScale.Runtime.log, then repeat the same transformation sequence. For
+-+each new CORRECTION QUEUED line, preserved-ratio must match the immediately
+-+preceding MAX-HP CHANGE old-ratio (apart from printed float precision).
+-diff -ruN /mnt/data/hsbase/HealthScale-restored-source/README.md /mnt/data/hsfix/HealthScale-restored-source/README.md
+---- /mnt/data/hsbase/HealthScale-restored-source/README.md	2026-07-12 03:56:13.000000000 +0000
+-+++ /mnt/data/hsfix/HealthScale-restored-source/README.md	2026-07-12 04:24:10.851562409 +0000
+-@@ -23,6 +23,22 @@
+- Camera, discovery modes, Project Perception, causal probes, scanners, Ki,
+- stamina, combat scaling and all managed UI projects.
+- 
+-+
+-+## Live pre-change ratio rule
+-+
+-+Every distinct maximum-HP change now starts from the fighter's live percentage
+-+immediately before the change:
+-+
+-+```text
+-+live ratio = current HP / maximum HP
+-+corrected current HP = live ratio * new maximum HP
+-+```
+-+
+-+A prior transformation/domain lease may still retain an older percentage for
+-+late-write remapping, but it is never allowed to seed a later transformation,
+-+detransformation, Super Soul activation, or other maximum-health alteration.
+-+This prevents stale-ratio healing after normal damage between health changes.
+-+
+- ## Zero-frame rule
+- 
+- A zero-current-HP frame during a pending maximum-health transition cannot alter
+-diff -ruN /mnt/data/hsbase/HealthScale-restored-source/VALIDATION_REPORT.txt /mnt/data/hsfix/HealthScale-restored-source/VALIDATION_REPORT.txt
+---- /mnt/data/hsbase/HealthScale-restored-source/VALIDATION_REPORT.txt	2026-07-12 04:01:55.000000000 +0000
+-+++ /mnt/data/hsfix/HealthScale-restored-source/VALIDATION_REPORT.txt	2026-07-12 04:24:10.852287792 +0000
+-@@ -1,100 +1,57 @@
+--HEALTHSCALE RESTORATION AND ZERO-FRAME VALIDATION
+--================================================
+-+HEALTHSCALE 1.0.1 VALIDATION REPORT
+-+===================================
+- 
+--SOURCE
+--------
+--Input archive: XV2PowerScaler-master(1).zip
+--Original files: 488
+--HealthScale files after purge: 20
+--
+--PURGE RESULT
+--------------
+--Removed the managed Studio, Saga Workshop, lore/profile/package systems,
+--Runtime Camera, discovery modes, Project Perception, causal probes, scanners,
+--Ki/stamina systems, combat scaling, and the entire native power_scaler tree.
+--
+--The retained Visual Studio project contains only six C++ translation units:
+--- dllmain.cpp
+--- health_overhaul_runtime.cpp
+--- health_transition_model.cpp
+--- hud_health_normalizer.cpp
+--- logger.cpp
+--- xinput_proxy.cpp
+-+SCOPE
+-+-----
+-+Health-only source tree. No PowerScaler Studio, Saga Workshop, lore/package,
+-+discovery, Runtime Camera, Project Perception, Ki/stamina, or combat-scaling
+-+systems are present.
+-+
+-+LIVE-RATIO CONTRACT
+-+-------------------
+-+1. Each distinct maximum-HP change starts from the live pre-change ratio:
+-+       current HP / maximum HP
+-+2. A historical domain lease cannot override that ratio.
+-+3. Maximum changes that occur while the same correction is still pending remain
+-+   one staged transition and carry the pending ratio.
+-+4. Transition damage/healing after the snapshot is applied as a delta only when
+-+   its source scale is identified.
+- 
+- ZERO-FRAME CONTRACT
+- -------------------
+--1. A pending health transition whose observed current HP becomes zero is
+--   classified as TemporaryZero before ratio, baseline, source domain,
+--   last-observed sample, or stabilization state can advance.
+--2. The last valid nonzero ratio is frozen.
+--3. Repeated zero frames continue to hold that ratio.
+--4. The first recovered nonzero frame is RecoveryBaseline. It establishes a
+--   new source baseline but contributes no healing or damage delta.
+--5. Only later nonzero movement contributes damage or healing.
+--6. The runtime never writes current HP while the observed value is zero.
+--   A persistent real death therefore times out/cancels instead of being revived.
+--7. The native HUD normalization hook follows the same zero/recovery behavior,
+--   so a transition-owned zero frame does not collapse the normalized bar.
+--
+--EQUATION CHECK
+----------------
+--Before transformation:
+--    current = 1985.548
+--    maximum = 2056.356
+--    ratio   = 0.965566273544075
+--    percent = 96.556627354407%
+--
+--After maximum changes to 4112.713:
+--    corrected current = ratio * 4112.713
+--                      = 3971.096965566273
+--    verified ratio    = 0.965566273544075
+--    percentage drift  = 0 within the calculation precision shown
+--
+--During a zero frame:
+--    observed current = 0
+--    held ratio       = 0.965566273544075
+--    delta ratio      = 0
+-+1. A zero frame is rejected before ratio, baseline, domain, last-observed, or
+-+   stabilization state can advance.
+-+2. Repeated zero frames hold the last valid ratio.
+-+3. The first recovered nonzero frame is baseline-only.
+-+4. The runtime never writes current HP while observed HP is zero.
+- 
+- VALIDATION PERFORMED
+- --------------------
+--PASS: health_transition_model_tests with g++ C++20.
+--PASS: zero-on-entry classification.
+--PASS: repeated-zero classification.
+--PASS: recovery-baseline classification.
+--PASS: zero frame leaves ratio and delta unchanged.
+--PASS: recovery baseline leaves ratio unchanged.
+--PASS: post-recovery damage changes ratio normally.
+--PASS: all six C++ translation units passed Clang C++20 syntax checking with
+--      Windows API declaration stubs and -Wall -Wextra -Wpedantic.
+--PASS: HealthScale.Runtime.vcxproj is valid XML and references no missing files.
+--PASS: no source/build references remain to PowerScaler, Saga Workshop, lore,
+--      discovery, Runtime Camera, Project Perception, or power_scaler/.
+--
+--NOT YET PERFORMED
+-------------------
+--- A real MSVC Release|x64 link/build in Visual Studio.
+--- Live DBXV2 transformation, detransformation, Super Soul, defeat, revive, and
+--  Training Mode testing.
+--
+--FILES
+-------
+--HealthScale.sln
+--PURGE_REPORT.txt
+--README.md
+--src/native/HealthScale.Runtime/HealthScale.Runtime.def
+--src/native/HealthScale.Runtime/HealthScale.Runtime.vcxproj
+--src/native/HealthScale.Runtime/HealthScale.ini
+--src/native/HealthScale.Runtime/README.md
+--src/native/HealthScale.Runtime/src/dllmain.cpp
+--src/native/HealthScale.Runtime/src/health_overhaul_runtime.cpp
+--src/native/HealthScale.Runtime/src/health_overhaul_runtime.h
+--src/native/HealthScale.Runtime/src/health_transition_model.cpp
+--src/native/HealthScale.Runtime/src/health_transition_model.h
+--src/native/HealthScale.Runtime/src/hud_health_normalizer.cpp
+--src/native/HealthScale.Runtime/src/hud_health_normalizer.h
+--src/native/HealthScale.Runtime/src/logger.cpp
+--src/native/HealthScale.Runtime/src/logger.h
+--src/native/HealthScale.Runtime/src/version.rc
+--src/native/HealthScale.Runtime/src/xinput_proxy.cpp
+--src/native/HealthScale.Runtime/src/xinput_proxy.h
+--tests/native/health_transition_model_tests.cpp
+-+PASS: g++ C++20 transition-model test suite.
+-+PASS: regression: detransformation ignores stale 62.5052203% lease and starts
+-+      from live 1965.425 / 4203.245.
+-+PASS: regression: later 2x -> 3x change ignores stale 46.0152476% lease and
+-+      starts from live 1772.790 / 4203.245.
+-+PASS: invalid and overfull live-ratio inputs clamp safely.
+-+PASS: zero-frame and recovery tests.
+-+PASS: staged transition, reversion, domain classification, and HUD activity tests.
+-+PASS: AddressSanitizer + UndefinedBehaviorSanitizer model test run.
+-+PASS: all six runtime C++ translation units passed Clang C++20 syntax checking
+-+      with -Wall -Wextra -Wpedantic and Windows declaration stubs.
+-+PASS: Visual Studio project XML references only existing retained files.
+-+
+-+NOT PERFORMED IN THIS ENVIRONMENT
+-+---------------------------------
+-+- MSVC Release|x64 link/build.
+-+- Live DBXV2 verification of the repaired DLL.
+-+
+-+EXPECTED NEXT-TEST LOG INVARIANT
+-+--------------------------------
+-+For every new distinct maximum-health event:
+-+
+-+    MAX-HP CHANGE ... old-ratio=X
+-+    CORRECTION QUEUED ... preserved-ratio=X ratio-source=live-pre-change
+-+
+-+The printed values should match within normal float/log rounding. The
+-+prior-lease-ratio field may differ; that difference is diagnostic and must no
+-+longer affect the selected preserved-ratio.
+-diff -ruN /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/README.md /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/README.md
+---- /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/README.md	2026-07-12 03:56:13.000000000 +0000
+-+++ /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/README.md	2026-07-12 04:24:10.851771954 +0000
+-@@ -46,3 +46,18 @@
+-   -o health_transition_model_tests
+- ./health_transition_model_tests
+- ```
+-+
+-+## Maximum-change authority
+-+
+-+When a new maximum-health change is detected, HealthScale snapshots the live
+-+pre-change `current / maximum` ratio. Historical domain-lease ratios are logged
+-+for comparison but are not used as the starting percentage. The queue log now
+-+contains:
+-+
+-+```text
+-+ratio-source=live-pre-change prior-lease-ratio=...
+-+```
+-+
+-+This makes chained transformations and detransformations preserve the health
+-+percentage that actually existed immediately before each distinct change.
+-+
+-diff -ruN /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_overhaul_runtime.cpp /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_overhaul_runtime.cpp
+---- /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_overhaul_runtime.cpp	2026-07-12 04:00:33.000000000 +0000
+-+++ /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_overhaul_runtime.cpp	2026-07-12 04:22:44.014628962 +0000
+-@@ -474,12 +474,19 @@
+-     const float canonicalMaximumHp = continuingLease
+-         ? state.domainLease.canonicalMaximumHp
+-         : state.maximumHp;
+--    const double ratio = continuingLease
+-+    // Every distinct maximum-health change starts from the fighter's live
+-+    // percentage immediately before that change. A domain lease exists only
+-+    // to remap late canonical-scale writes while a maximum is already scaled;
+-+    // its tracked ratio is not authoritative for a later transformation. In
+-+    // particular, the lease can stop receiving absolute target-domain updates
+-+    // once current HP numerically overlaps the canonical range. Reusing it here
+-+    // would resurrect an older, higher percentage and heal the fighter.
+-+    const double livePreChangeRatio = hs::ComputeLiveHealthRatio(
+-+        state.currentHp, state.maximumHp);
+-+    const double priorLeaseRatio = continuingLease
+-         ? std::clamp(state.domainLease.trackedRatio, 0.0, 1.0)
+--        : (state.maximumHp > 0.0f
+--            ? std::clamp(static_cast<double>(state.currentHp) /
+--                         static_cast<double>(state.maximumHp), 0.0, 1.0)
+--            : 0.0);
+-+        : livePreChangeRatio;
+-+    const double ratio = livePreChangeRatio;
+- 
+-     state.pending.active = true;
+-     state.pending.mob = state.mob;
+-@@ -546,12 +553,13 @@
+-     hs::Log(L"CORRECTION QUEUED slot=%zu mob=0x%p direction=%ls "
+-             L"old-current=%.3f old-max=%.3f observed-current=%.3f "
+-             L"new-max=%.3f transition-baseline=%.3f baseline-scale=%.3f "
+--            L"preserved-ratio=%.9f canonical-max=%.3f hud-lane=%zu",
+-+            L"preserved-ratio=%.9f ratio-source=live-pre-change "
+-+            L"prior-lease-ratio=%.9f canonical-max=%.3f hud-lane=%zu",
+-             slot, reinterpret_cast<void*>(state.mob),
+-             increase ? L"increase" : L"decrease", state.currentHp,
+-             state.maximumHp, newCurrentHp, newMaximumHp,
+-             state.pending.transitionBaselineCurrentHp,
+--            state.pending.transitionBaselineScaleHp, ratio,
+-+            state.pending.transitionBaselineScaleHp, ratio, priorLeaseRatio,
+-             state.pending.canonicalMaximumHp, hudLane);
+- }
+- 
+-diff -ruN /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.cpp /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.cpp
+---- /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.cpp	2026-07-12 04:00:11.000000000 +0000
+-+++ /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.cpp	2026-07-12 04:22:44.015788379 +0000
+-@@ -89,6 +89,17 @@
+-     return result;
+- }
+- 
+-+double ComputeLiveHealthRatio(
+-+    float currentHp,
+-+    float maximumHp) noexcept {
+-+    if (!std::isfinite(currentHp) || !std::isfinite(maximumHp) ||
+-+        maximumHp <= 0.0f) {
+-+        return 0.0;
+-+    }
+-+    return ClampRatio(
+-+        static_cast<double>(currentHp) / static_cast<double>(maximumHp));
+-+}
+-+
+- float SelectTransitionCurrentScale(
+-     bool increase,
+-     float oldMaximumHp,
+-diff -ruN /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.h /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.h
+---- /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.h	2026-07-12 04:00:11.000000000 +0000
+-+++ /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/health_transition_model.h	2026-07-12 04:22:44.015351100 +0000
+-@@ -48,6 +48,13 @@
+-     float observedCurrentHp,
+-     bool maximumJustChanged) noexcept;
+- 
+-+// Returns the authoritative percentage immediately before a distinct
+-+// maximum-health change. This intentionally uses only the live current and
+-+// maximum values; historical transition/domain state must not override it.
+-+[[nodiscard]] double ComputeLiveHealthRatio(
+-+    float currentHp,
+-+    float maximumHp) noexcept;
+-+
+- [[nodiscard]] float SelectTransitionCurrentScale(
+-     bool increase,
+-     float oldMaximumHp,
+-diff -ruN /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/version.rc /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/version.rc
+---- /mnt/data/hsbase/HealthScale-restored-source/src/native/HealthScale.Runtime/src/version.rc	2026-07-12 03:57:02.000000000 +0000
+-+++ /mnt/data/hsfix/HealthScale-restored-source/src/native/HealthScale.Runtime/src/version.rc	2026-07-12 04:24:10.851248956 +0000
+-@@ -1,8 +1,8 @@
+- #include <windows.h>
+- 
+- VS_VERSION_INFO VERSIONINFO
+-- FILEVERSION 1,0,0,0
+-- PRODUCTVERSION 1,0,0,0
+-+ FILEVERSION 1,0,1,0
+-+ PRODUCTVERSION 1,0,1,0
+-  FILEFLAGSMASK 0x3fL
+- #ifdef _DEBUG
+-  FILEFLAGS 0x1L
+-@@ -19,11 +19,11 @@
+-         BEGIN
+-             VALUE "CompanyName", "HealthScale Project\0"
+-             VALUE "FileDescription", "HealthScale Native Runtime\0"
+--            VALUE "FileVersion", "1.0.0.0\0"
+-+            VALUE "FileVersion", "1.0.1.0\0"
+-             VALUE "InternalName", "xinput_other.dll\0"
+-             VALUE "OriginalFilename", "xinput_other.dll\0"
+-             VALUE "ProductName", "HealthScale Runtime\0"
+--            VALUE "ProductVersion", "1.0.0\0"
+-+            VALUE "ProductVersion", "1.0.1\0"
+-         END
+-     END
+-     BLOCK "VarFileInfo"
+-diff -ruN /mnt/data/hsbase/HealthScale-restored-source/tests/native/health_transition_model_tests.cpp /mnt/data/hsfix/HealthScale-restored-source/tests/native/health_transition_model_tests.cpp
+---- /mnt/data/hsbase/HealthScale-restored-source/tests/native/health_transition_model_tests.cpp	2026-07-12 04:00:11.000000000 +0000
+-+++ /mnt/data/hsfix/HealthScale-restored-source/tests/native/health_transition_model_tests.cpp	2026-07-12 04:23:01.622441566 +0000
+-@@ -134,6 +134,32 @@
+-     ExpectNear(postReversionDamage.ratio,
+-                0.739557454 - 100.0 / revertedMaximum, 1.0e-5);
+- 
+-+    // Regression from the live 2026-07-11 report: a completed 2x health
+-+    // transition left a domain lease at an older 62.5052203%, while the
+-+    // fighter had since fallen to 1965.425 / 4203.245 = 46.7597083%. A new
+-+    // detransformation must start from the live percentage, never the lease.
+-+    const double liveDetransformRatio = ComputeLiveHealthRatio(
+-+        1965.425f, 4203.245f);
+-+    ExpectNear(liveDetransformRatio, 0.467597083, 1.0e-6);
+-+    const double staleDetransformLease = 0.625052203;
+-+    assert(std::fabs(liveDetransformRatio - staleDetransformLease) > 0.15);
+-+    ExpectNear(liveDetransformRatio * 2101.622, 982.712, 0.01);
+-+
+-+    // Regression from the same report: a later 2x -> 3x change occurred at
+-+    // 1772.790 / 4203.245 = 42.1767126%, but the old lease still held
+-+    // 46.0152476%. The new transition must preserve the live 42.1767%.
+-+    const double liveChainRatio = ComputeLiveHealthRatio(
+-+        1772.790f, 4203.245f);
+-+    ExpectNear(liveChainRatio, 0.421767126, 1.0e-6);
+-+    const double staleChainLease = 0.460152476;
+-+    assert(std::fabs(liveChainRatio - staleChainLease) > 0.03);
+-+    ExpectNear(liveChainRatio * 6304.867, 2659.186, 0.02);
+-+
+-+    // Invalid live health never imports a historical ratio by accident.
+-+    ExpectNear(ComputeLiveHealthRatio(100.0f, 0.0f), 0.0, 0.0);
+-+    ExpectNear(ComputeLiveHealthRatio(-10.0f, 100.0f), 0.0, 0.0);
+-+    ExpectNear(ComputeLiveHealthRatio(150.0f, 100.0f), 1.0, 0.0);
+-+
+-     assert(!IsHudLanePresentationLatched(0));
+-     assert(IsHudLanePresentationLatched(1234));
+-     // A stale writer heartbeat does not clear the HUD-presence latch. The two
+diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/QUEST_RUNTIME_TEST_PLAN.md HealthScale-1.1.0-quest-overhaul-source/QUEST_RUNTIME_TEST_PLAN.md
+--- HealthScale-1.0.1-fixed-source/QUEST_RUNTIME_TEST_PLAN.md	1970-01-01 00:00:00.000000000 +0000
++++ HealthScale-1.1.0-quest-overhaul-source/QUEST_RUNTIME_TEST_PLAN.md	2026-07-18 00:19:33.463290813 +0000
+@@ -0,0 +1,68 @@
++# HealthScale 1.1.0 Runtime Test Plan
++
++## Installation isolation
++
++Keep the frozen HealthScale build backed up. Build this candidate as
++`xinput_other.dll` and install only the candidate DLL plus its matching
++`HealthScale.ini` for the test.
++
++Clear these before each run:
++
++- `HealthScale.Runtime.log`
++- prior `HealthScaleScanner_Reports/HealthScaleNormalization_*.txt`
++
++## Test A — Training Room regression
++
++1. Enter Training with a base character.
++2. Take damage.
++3. Confirm the single bar represents the same percentage.
++4. Transform and detransform once.
++5. Confirm no full heal and no zero-HP revival.
++
++## Test B — Kaioken x20 cancellation
++
++1. Use the Frieza-Saga Goku preset with the x20 path.
++2. Transform into Kaioken x20.
++3. Lose enough health to make the percentage obvious, preferably 40–70%.
++4. Cancel Kaioken without healing.
++5. Confirm base-form health retains the same percentage.
++
++Required log invariant:
++
++```text
++MAX-HP CHANGE ... old-ratio=X
++CORRECTION QUEUED ... preserved-ratio=X
++CORRECTION TARGET-DOMAIN REBASE ... held-ratio=X
++CORRECTION APPLIED ... tracked-ratio=X
++```
++
++## Test C — Initial quest enemies
++
++1. Start the same quest used in the video.
++2. Lock onto every initial enemy.
++3. Damage each enemy without defeating them immediately.
++4. Confirm each target bar is a normalized single percentage bar.
++
++## Test D — Reinforcements and stage transitions
++
++1. Continue through the portal and dialogue/objective gates.
++2. Lock onto newly spawned enemies in every wave.
++3. Confirm their bars normalize without restarting the game.
++4. Confirm the player bar remains correct across the transition.
++
++## Test E — Quest transformations, revives, and replacements
++
++When available in the quest:
++
++- allow an enemy to transform;
++- observe a revive/respawn;
++- observe a replacement actor or new wave occupying an old slot.
++
++Confirm no full heal unless scripted, no zero-HP revival, and no unnormalized
++multi-layer target bar.
++
++## Files to return after testing
++
++- full or split MP4 footage;
++- `HealthScale.Runtime.log`;
++- newest `HealthScaleNormalization_*.txt` report.
+diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/README.md HealthScale-1.1.0-quest-overhaul-source/README.md
+--- HealthScale-1.0.1-fixed-source/README.md	2026-07-12 04:24:10.000000000 +0000
++++ HealthScale-1.1.0-quest-overhaul-source/README.md	2026-07-18 00:19:33.469794459 +0000
+@@ -1,64 +1,65 @@
+-# HealthScale
++# HealthScale 1.1.0 — Quest and Transformation Overhaul Candidate
+ 
+-HealthScale is the restored health-only runtime extracted from XV2PowerScaler.
++This is a separate repair candidate. It does not replace or modify the frozen
++HealthScale 1.0.1 source archive.
+ 
+-Its scope is deliberately limited to two questions:
++## Scope
+ 
+-1. Does the Xenoverse HUD represent health as a percentage of current HP over maximum HP?
+-2. When maximum HP changes, does current HP preserve the same percentage?
++HealthScale remains health-only:
+ 
+-## Retained
++- native single-bar HUD normalization;
++- current and maximum HP acquisition;
++- percentage preservation when maximum HP changes;
++- transformation, detransformation, scripted, buff/debuff and equipment health
++  transitions;
++- quest/additional HUD lane discovery;
++- zero-frame and death protection;
++- health-only diagnostics and tests.
+ 
+-- Native HUD health normalization
+-- Current and maximum HP acquisition
+-- Percentage-preserving correction for maximum-HP increases and decreases
+-- Transformation, detransformation, Super Soul, buff, debuff, equipment, skill,
+-  scripted, damage, healing, death and respawn health changes
+-- Temporary zero-frame protection
+-- Health-only logging and transition-model tests
++No Ki, stamina, combat-scaling, lore, scanner, camera, overlay, or PowerScaler
++Studio systems are included.
+ 
+-## Removed
++## 1.1.0 repairs
+ 
+-PowerScaler Studio, Saga Workshop, lore systems, gameplay packages, Runtime
+-Camera, discovery modes, Project Perception, causal probes, scanners, Ki,
+-stamina, combat scaling and all managed UI projects.
++### Quest HUD compatibility
+ 
++The original implementation recognized five fixed HudCockpit lane offsets from
++Training/Versus testing. The 1.1.0 candidate also normalizes plausible current
++and maximum health submissions at additional displacements reached through the
++same exact signature-checked health writer instructions.
+ 
+-## Live pre-change ratio rule
++A fixed, allocation-free registry records discovered quest/additional lanes and
++gives each one an independent HUD transition tracker.
+ 
+-Every distinct maximum-HP change now starts from the fighter's live percentage
+-immediately before the change:
++### Kaioken x20 cancellation
++
++Large detransformations can briefly expose current HP in the old scale after
++maximum HP has returned to base. The runtime now accepts bounded mixed-domain
++pairs and treats the first target-domain clamp/rebase as a baseline, not a new
++full-health ratio.
++
++## Core percentage contract
+ 
+ ```text
+-live ratio = current HP / maximum HP
+-corrected current HP = live ratio * new maximum HP
++preserved ratio = coherent current HP / coherent maximum HP
++corrected current HP = preserved ratio * stabilized new maximum HP
+ ```
+ 
+-A prior transformation/domain lease may still retain an older percentage for
+-late-write remapping, but it is never allowed to seed a later transformation,
+-detransformation, Super Soul activation, or other maximum-health alteration.
+-This prevents stale-ratio healing after normal damage between health changes.
+-
+-## Zero-frame rule
+-
+-A zero-current-HP frame during a pending maximum-health transition cannot alter
+-ratio, source domain, baseline, last valid sample or stabilization progress.
+-The first recovered nonzero frame becomes a new baseline without being counted
+-as healing. The runtime never writes health while observed current HP is zero,
+-so a real death is not revived.
++A target-domain rebase during a decrease never overwrites the held ratio.
+ 
+ ## Build
+ 
+ Open `HealthScale.sln` in Visual Studio and build `Release|x64`.
+ The loader-compatible output remains `xinput_other.dll`.
+ 
+-## Test
+-
+-The pure transition model can be tested with any C++20 compiler:
++## Model test
+ 
+-```
++```text
+ g++ -std=c++20 tests/native/health_transition_model_tests.cpp \
+   src/native/HealthScale.Runtime/src/health_transition_model.cpp \
+   -o health_transition_model_tests
+ ./health_transition_model_tests
+ ```
++
++See `FIX_REPORT.txt`, `VALIDATION_REPORT.txt`, and
++`QUEST_RUNTIME_TEST_PLAN.md` before live testing.
+diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/VALIDATION_REPORT.txt HealthScale-1.1.0-quest-overhaul-source/VALIDATION_REPORT.txt
+--- HealthScale-1.0.1-fixed-source/VALIDATION_REPORT.txt	2026-07-12 04:24:10.000000000 +0000
++++ HealthScale-1.1.0-quest-overhaul-source/VALIDATION_REPORT.txt	2026-07-18 00:19:33.456997387 +0000
+@@ -1,57 +1,44 @@
+-HEALTHSCALE 1.0.1 VALIDATION REPORT
++HEALTHSCALE 1.1.0 VALIDATION REPORT
+ ===================================
+ 
+-SCOPE
+------
+-Health-only source tree. No PowerScaler Studio, Saga Workshop, lore/package,
+-discovery, Runtime Camera, Project Perception, Ki/stamina, or combat-scaling
+-systems are present.
+-
+-LIVE-RATIO CONTRACT
+--------------------
+-1. Each distinct maximum-HP change starts from the live pre-change ratio:
+-       current HP / maximum HP
+-2. A historical domain lease cannot override that ratio.
+-3. Maximum changes that occur while the same correction is still pending remain
+-   one staged transition and carry the pending ratio.
+-4. Transition damage/healing after the snapshot is applied as a delta only when
+-   its source scale is identified.
+-
+-ZERO-FRAME CONTRACT
+--------------------
+-1. A zero frame is rejected before ratio, baseline, domain, last-observed, or
+-   stabilization state can advance.
+-2. Repeated zero frames hold the last valid ratio.
+-3. The first recovered nonzero frame is baseline-only.
+-4. The runtime never writes current HP while observed HP is zero.
+-
+-VALIDATION PERFORMED
+---------------------
+-PASS: g++ C++20 transition-model test suite.
+-PASS: regression: detransformation ignores stale 62.5052203% lease and starts
+-      from live 1965.425 / 4203.245.
+-PASS: regression: later 2x -> 3x change ignores stale 46.0152476% lease and
+-      starts from live 1772.790 / 4203.245.
+-PASS: invalid and overfull live-ratio inputs clamp safely.
+-PASS: zero-frame and recovery tests.
+-PASS: staged transition, reversion, domain classification, and HUD activity tests.
+-PASS: AddressSanitizer + UndefinedBehaviorSanitizer model test run.
+-PASS: all six runtime C++ translation units passed Clang C++20 syntax checking
+-      with -Wall -Wextra -Wpedantic and Windows declaration stubs.
+-PASS: Visual Studio project XML references only existing retained files.
+-
+-NOT PERFORMED IN THIS ENVIRONMENT
+----------------------------------
+-- MSVC Release|x64 link/build.
+-- Live DBXV2 verification of the repaired DLL.
+-
+-EXPECTED NEXT-TEST LOG INVARIANT
+---------------------------------
+-For every new distinct maximum-health event:
+-
+-    MAX-HP CHANGE ... old-ratio=X
+-    CORRECTION QUEUED ... preserved-ratio=X ratio-source=live-pre-change
+-
+-The printed values should match within normal float/log rounding. The
+-prior-lease-ratio field may differ; that difference is diagnostic and must no
+-longer affect the selected preserved-ratio.
++RESULT
++------
++PASS: pure C++20 transition-model tests.
++PASS: Kaioken x20 mixed-domain pair accepted at 256x bound and rejected at the
++      former 8x bound.
++PASS: target-domain rebase detection for 1,800,000 -> 90,000 decrease.
++PASS: expected 96.1625% -> 86,546.25 HP arithmetic.
++PASS: existing stale-lease, zero-frame, recovery, staged-transition, domain,
++      HUD-presence and relapse regression tests.
++PASS: AddressSanitizer and UndefinedBehaviorSanitizer model test run.
++PASS: all six native runtime C++ translation units passed Clang C++20 syntax
++      checking with -Wall -Wextra -Wpedantic and Windows declaration stubs.
++PASS: Visual Studio project continues to reference only retained health-only
++      source files.
++PASS: no compiled test binaries included in this source package.
++
++NOT PERFORMED HERE
++------------------
++- MSVC Release|x64 compilation/link against the Windows SDK.
++- Live DBXV2 1.25.02.0 / XV2 Patcher 4.64 testing.
++- Confirmation of the exact quest HUD displacements on the user's machine.
++
++EXPECTED LIVE LOG / REPORT
++--------------------------
++Kaioken x20 cancellation should produce a sequence similar to:
++
++  MAX-HP CHANGE ... old-ratio=X
++  CORRECTION QUEUED ... preserved-ratio=X ratio-source=live-pre-change
++  CORRECTION TARGET-DOMAIN REBASE ... held-ratio=X
++  CORRECTION APPLIED ... tracked-ratio=X
++
++The normalized quest report should show:
++
++  normalize discovered quest HUD lanes: YES
++  dynamically normalized unsupported-lane hits: > 0
++  discovered-lane registry capacity misses: 0
++  DISCOVERED QUEST/ADDITIONAL HUD LANES
++
++The original unsupported-lane counter can remain nonzero: in 1.1.0 it records
++that the displacement was outside the legacy five-lane table, while the new
++counter proves those plausible writes were normalized instead of passed through.
+diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/HealthScale.ini HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/HealthScale.ini
+--- HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/HealthScale.ini	2026-07-12 03:57:25.000000000 +0000
++++ HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/HealthScale.ini	2026-07-18 00:12:00.932431018 +0000
+@@ -21,6 +21,7 @@
+ NormalizeAllHudLanes=1
+ NormalizePlayer=1
+ NormalizeTarget=1
++NormalizeDiscoveredHudLanes=1
+ SingleBarUnits=10000
+ PreserveRatioDuringMaximumTransitions=1
+ TransitionHoldMilliseconds=3500
+diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/README.md HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/README.md
+--- HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/README.md	2026-07-12 04:24:10.000000000 +0000
++++ HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/README.md	2026-07-18 00:19:33.476299843 +0000
+@@ -1,63 +1,27 @@
+-# HealthScale
++# HealthScale Runtime 1.1.0 Candidate
+ 
+-HealthScale is the restored health-only runtime extracted from XV2PowerScaler.
++Health-only native runtime for DBXV2 1.25.02.0 / XV2 Patcher 4.64.
+ 
+-Its scope is deliberately limited to two questions:
++## Added in 1.1.0
+ 
+-1. Does the Xenoverse HUD represent health as a percentage of current HP over maximum HP?
+-2. When maximum HP changes, does current HP preserve the same percentage?
++- bounded mixed-domain Battle_Mob health acceptance for large transformations;
++- target-domain rebase protection during maximum-health decreases;
++- automatic normalization of plausible quest/additional HUD health lanes;
++- fixed-capacity discovered-lane diagnostics and per-lane transition tracking.
+ 
+-## Retained
++## Safety
+ 
+-- Native HUD health normalization
+-- Current and maximum HP acquisition
+-- Percentage-preserving correction for maximum-HP increases and decreases
+-- Transformation, detransformation, Super Soul, buff, debuff, equipment, skill,
+-  scripted, damage, healing, death and respawn health changes
+-- Temporary zero-frame protection
+-- Health-only logging and transition-model tests
++- exact writer signatures are checked before hooks activate;
++- HUD hooks write only the displaced HudCockpit health destination;
++- gameplay correction writes only current HP after live slot ownership checks;
++- maximum HP is never written;
++- zero HP is never revived.
+ 
+-## Removed
++## Configuration
+ 
+-PowerScaler Studio, Saga Workshop, lore systems, gameplay packages, Runtime
+-Camera, discovery modes, Project Perception, causal probes, scanners, Ki,
+-stamina, combat scaling and all managed UI projects.
+-
+-## Zero-frame rule
+-
+-A zero-current-HP frame during a pending maximum-health transition cannot alter
+-ratio, source domain, baseline, last valid sample or stabilization progress.
+-The first recovered nonzero frame becomes a new baseline without being counted
+-as healing. The runtime never writes health while observed current HP is zero,
+-so a real death is not revived.
++`NormalizeDiscoveredHudLanes=1` enables quest/additional lane normalization when
++`NormalizeAllHudLanes=1` is also enabled.
+ 
+ ## Build
+ 
+-Open `HealthScale.sln` in Visual Studio and build `Release|x64`.
+-The loader-compatible output remains `xinput_other.dll`.
+-
+-## Test
+-
+-The pure transition model can be tested with any C++20 compiler:
+-
+-```
+-g++ -std=c++20 tests/native/health_transition_model_tests.cpp \
+-  src/native/HealthScale.Runtime/src/health_transition_model.cpp \
+-  -o health_transition_model_tests
+-./health_transition_model_tests
+-```
+-
+-## Maximum-change authority
+-
+-When a new maximum-health change is detected, HealthScale snapshots the live
+-pre-change `current / maximum` ratio. Historical domain-lease ratios are logged
+-for comparison but are not used as the starting percentage. The queue log now
+-contains:
+-
+-```text
+-ratio-source=live-pre-change prior-lease-ratio=...
+-```
+-
+-This makes chained transformations and detransformations preserve the health
+-percentage that actually existed immediately before each distinct change.
+-
++Build `Release|x64` in Visual Studio. Output: `xinput_other.dll`.
+diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/src/health_overhaul_runtime.cpp HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/src/health_overhaul_runtime.cpp
+--- HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/src/health_overhaul_runtime.cpp	2026-07-12 04:22:44.000000000 +0000
++++ HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/src/health_overhaul_runtime.cpp	2026-07-18 00:12:00.931371922 +0000
+@@ -33,6 +33,10 @@
+ 
+ constexpr float kMinimumPlausibleMaximumHp = 1.0f;
+ constexpr float kMaximumPlausibleHealth = std::numeric_limits<float>::max();
++// Health transformations can temporarily expose current HP in the previous
++// domain after maximum HP has already switched. x20 Kaioken requires at least a
++// 20x allowance; 256x remains bounded while covering future large transforms.
++constexpr double kMaximumTransientHealthRatio = 256.0;
+ constexpr DWORD kPollIntervalMs = 50;
+ constexpr DWORD kCurrentHpLogIntervalMs = 750;
+ constexpr DWORD kHeartbeatIntervalMs = 10000;
+@@ -237,9 +241,8 @@
+ 
+     if (!IsFiniteHealth(currentHp) || !IsFiniteHealth(maximumHp)) return false;
+     if (maximumHp < kMinimumPlausibleMaximumHp) return false;
+-    if (currentHp < -1.0f) return false;
+-    if (currentHp > maximumHp * 8.0f && currentHp > 1000.0f) return false;
+-    return true;
++    return hs::IsPlausibleHealthPair(
++        currentHp, maximumHp, kMaximumTransientHealthRatio);
+ }
+ 
+ int ScoreCoreCandidate(std::uintptr_t core) noexcept {
+@@ -736,42 +739,60 @@
+         return false;
+     }
+ 
+-    const auto domainObservation = hs::ClassifyHealthScaleValueDomain(
+-        pending.transitionBaselineScaleHp,
+-        observedMaximumHp,
+-        pending.lastObservedCurrentHp,
+-        pending.trackedRatio,
+-        observedCurrentHp,
+-        pending.domainMaximumJustChanged);
+-    pending.domainMaximumJustChanged = false;
+-    if (observedCurrentHp > 0.0f) {
+-        const bool sourceAndTargetShareScale = NearlyEqualRatio(
+-            pending.transitionBaselineScaleHp, observedMaximumHp, 0.001);
+-        const bool looksLikeSelectedSourceScale = sourceAndTargetShareScale ||
+-            (observedCurrentHp <= pending.transitionBaselineScaleHp * 1.25f &&
+-             (domainObservation.domain == hs::HealthScaleValueDomain::CanonicalScale ||
+-              pending.sourceDomain == hs::HealthScaleValueDomain::CanonicalScale));
+-        if (looksLikeSelectedSourceScale) {
+-            // A newly selected source scale is continuity-anchored to the held
+-            // ratio. This includes a decrease/reversion clamp where current HP
+-            // may equal the new maximum: the clamp is a baseline, not a heal.
+-            pending.trackedRatio = hs::ComputeTransitionRatio(
+-                pending.transitionBaselineRatio,
+-                pending.transitionBaselineCurrentHp,
+-                pending.transitionBaselineScaleHp,
+-                observedCurrentHp).ratio;
+-        } else if (domainObservation.domain == hs::HealthScaleValueDomain::TargetScale) {
+-            // A value clearly outside the selected source range proves the game
+-            // has switched to the target scale. Only then is its absolute target
+-            // ratio authoritative.
+-            pending.sourceDomain = hs::HealthScaleValueDomain::TargetScale;
+-            pending.trackedRatio = std::clamp(
+-                static_cast<double>(observedCurrentHp) /
+-                    static_cast<double>(observedMaximumHp),
+-                0.0, 1.0);
+-            pending.transitionBaselineRatio = pending.trackedRatio;
+-            pending.transitionBaselineCurrentHp = observedCurrentHp;
+-            pending.transitionBaselineScaleHp = observedMaximumHp;
++    // During a large decrease, the game can expose old-domain current HP with
++    // the new maximum, then clamp/rebase current HP into the new domain. The
++    // first target-domain sample is baseline-only: accepting 90,000/90,000 as a
++    // new ratio after x20 Kaioken would create the observed full heal.
++    const bool targetScaleRebase = !pending.increase &&
++        hs::IsTargetScaleRebaseAfterDecrease(
++            pending.transitionBaselineScaleHp,
++            observedMaximumHp,
++            observedCurrentHp);
++
++    if (targetScaleRebase) {
++        hs::Log(L"CORRECTION TARGET-DOMAIN REBASE slot=%zu mob=0x%p "
++                L"held-ratio=%.9f observed-current=%.3f observed-max=%.3f "
++                L"previous-scale=%.3f",
++                slot, reinterpret_cast<void*>(state.mob), pending.trackedRatio,
++                observedCurrentHp, observedMaximumHp,
++                pending.transitionBaselineScaleHp);
++        pending.sourceDomain = hs::HealthScaleValueDomain::TargetScale;
++        pending.transitionBaselineRatio = pending.trackedRatio;
++        pending.transitionBaselineCurrentHp = observedCurrentHp;
++        pending.transitionBaselineScaleHp = observedMaximumHp;
++        pending.domainMaximumJustChanged = false;
++    } else {
++        const auto domainObservation = hs::ClassifyHealthScaleValueDomain(
++            pending.transitionBaselineScaleHp,
++            observedMaximumHp,
++            pending.lastObservedCurrentHp,
++            pending.trackedRatio,
++            observedCurrentHp,
++            pending.domainMaximumJustChanged);
++        pending.domainMaximumJustChanged = false;
++        if (observedCurrentHp > 0.0f) {
++            const bool sourceAndTargetShareScale = NearlyEqualRatio(
++                pending.transitionBaselineScaleHp, observedMaximumHp, 0.001);
++            const bool looksLikeSelectedSourceScale = sourceAndTargetShareScale ||
++                (observedCurrentHp <= pending.transitionBaselineScaleHp * 1.25f &&
++                 (domainObservation.domain == hs::HealthScaleValueDomain::CanonicalScale ||
++                  pending.sourceDomain == hs::HealthScaleValueDomain::CanonicalScale));
++            if (looksLikeSelectedSourceScale) {
++                pending.trackedRatio = hs::ComputeTransitionRatio(
++                    pending.transitionBaselineRatio,
++                    pending.transitionBaselineCurrentHp,
++                    pending.transitionBaselineScaleHp,
++                    observedCurrentHp).ratio;
++            } else if (domainObservation.domain == hs::HealthScaleValueDomain::TargetScale) {
++                pending.sourceDomain = hs::HealthScaleValueDomain::TargetScale;
++                pending.trackedRatio = std::clamp(
++                    static_cast<double>(observedCurrentHp) /
++                        static_cast<double>(observedMaximumHp),
++                    0.0, 1.0);
++                pending.transitionBaselineRatio = pending.trackedRatio;
++                pending.transitionBaselineCurrentHp = observedCurrentHp;
++                pending.transitionBaselineScaleHp = observedMaximumHp;
++            }
+         }
+     }
+     pending.lastObservedCurrentHp = observedCurrentHp;
+diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/src/health_transition_model.cpp HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/src/health_transition_model.cpp
+--- HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/src/health_transition_model.cpp	2026-07-12 04:22:44.000000000 +0000
++++ HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/src/health_transition_model.cpp	2026-07-18 00:12:00.930320598 +0000
+@@ -100,6 +100,35 @@
+         static_cast<double>(currentHp) / static_cast<double>(maximumHp));
+ }
+ 
++bool IsPlausibleHealthPair(
++    float currentHp,
++    float maximumHp,
++    double maximumTransientRatio) noexcept {
++    if (!std::isfinite(currentHp) || !std::isfinite(maximumHp) ||
++        !std::isfinite(maximumTransientRatio) || maximumHp <= 0.0f ||
++        maximumTransientRatio < 1.0 || currentHp < -1.0f) {
++        return false;
++    }
++    const double ceiling = static_cast<double>(maximumHp) * maximumTransientRatio;
++    return static_cast<double>(currentHp) <= ceiling;
++}
++
++bool IsTargetScaleRebaseAfterDecrease(
++    float previousScaleHp,
++    float targetMaximumHp,
++    float observedCurrentHp) noexcept {
++    if (!std::isfinite(previousScaleHp) || previousScaleHp <= 0.0f ||
++        !std::isfinite(targetMaximumHp) || targetMaximumHp <= 0.0f ||
++        !std::isfinite(observedCurrentHp) || observedCurrentHp <= 0.0f) {
++        return false;
++    }
++    const double scaleRatio = static_cast<double>(previousScaleHp) /
++        static_cast<double>(targetMaximumHp);
++    if (scaleRatio < 1.5) return false;
++    return static_cast<double>(observedCurrentHp) <=
++        static_cast<double>(targetMaximumHp) * 1.01;
++}
++
+ float SelectTransitionCurrentScale(
+     bool increase,
+     float oldMaximumHp,
+diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/src/health_transition_model.h HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/src/health_transition_model.h
+--- HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/src/health_transition_model.h	2026-07-12 04:22:44.000000000 +0000
++++ HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/src/health_transition_model.h	2026-07-18 00:12:00.929893926 +0000
+@@ -55,6 +55,23 @@
+     float currentHp,
+     float maximumHp) noexcept;
+ 
++// Accepts a temporarily mixed current/max scale during large health-domain
++// changes (for example Kaioken x20 detransformation exposes old-scale current
++// HP after maximum HP has already returned to base). The caller supplies a
++// bounded maximum ratio so unrelated memory is still rejected.
++[[nodiscard]] bool IsPlausibleHealthPair(
++    float currentHp,
++    float maximumHp,
++    double maximumTransientRatio) noexcept;
++
++// Detects the first target-domain sample after a large maximum-health decrease.
++// That sample is a rebase/clamp baseline and must not be counted as damage or
++// accepted as a new full-health percentage.
++[[nodiscard]] bool IsTargetScaleRebaseAfterDecrease(
++    float previousScaleHp,
++    float targetMaximumHp,
++    float observedCurrentHp) noexcept;
++
+ [[nodiscard]] float SelectTransitionCurrentScale(
+     bool increase,
+     float oldMaximumHp,
+diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/src/hud_health_normalizer.cpp HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/src/hud_health_normalizer.cpp
+--- HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/src/hud_health_normalizer.cpp	2026-07-12 04:01:28.000000000 +0000
++++ HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/src/hud_health_normalizer.cpp	2026-07-18 00:18:10.999940761 +0000
+@@ -40,6 +40,9 @@
+ constexpr DWORD kHudSubmissionMaximumAgeMs = 500;
+ constexpr DWORD kHudSubmissionPairSkewMs = 125;
+ constexpr std::uint64_t kHudSubmissionRequiredHits = 4;
++constexpr std::size_t kDiscoveredLaneCapacity = 32;
++constexpr std::uintptr_t kUnclaimedDisplacement =
++    std::numeric_limits<std::uintptr_t>::max();
+ 
+ constexpr std::array<std::uint8_t, kWriterInstructionLength> kCurrentSignature = {
+     0xF3, 0x0F, 0x11, 0x84, 0x1F, 0x28, 0x06, 0x00, 0x00
+@@ -53,6 +56,11 @@
+     bool normalizeAllHudLanes = true;
+     bool normalizePlayer = true;
+     bool normalizeTarget = true;
++    // Quest HUDs can submit health through additional displacements that are
++    // not part of the original five Training/Versus lanes. The exact writer
++    // sites are still health-only, so plausible unknown lanes can be normalized
++    // statelessly and recorded for diagnostics.
++    bool normalizeDiscoveredHudLanes = true;
+     float singleBarUnits = kDefaultSingleBarUnits;
+     bool preserveRatioDuringMaximumTransitions = true;
+     DWORD transitionHoldMs = kDefaultHudTransitionHoldMs;
+@@ -116,6 +124,19 @@
+     std::atomic<bool> presentationEligible{false};
+ };
+ 
++struct DiscoveredLaneSample {
++    std::atomic<std::uintptr_t> displacement{kUnclaimedDisplacement};
++    std::atomic<std::uintptr_t> lastHudCockpit{0};
++    std::atomic<DWORD> lastThreadId{0};
++    std::atomic<std::uint64_t> currentHits{0};
++    std::atomic<std::uint64_t> maximumHits{0};
++    std::atomic<std::uint64_t> normalizedHits{0};
++    std::atomic<std::uint32_t> lastCurrentBits{0};
++    std::atomic<std::uint32_t> lastMaximumBits{0};
++    std::atomic<std::uint32_t> lastNormalizedCurrentBits{0};
++    LaneSample transitionState{};
++};
++
+ std::array<HookSite, 2> gSites = {{
+     {kCurrentWriterRva, kCurrentLaneOffset,
+      "current: movss [rdi+rbx+0x628], xmm0", kCurrentSignature},
+@@ -123,6 +144,7 @@
+      "maximum: movss [rdi+rbx+0x62C], xmm1", kMaximumSignature}
+ }};
+ std::array<LaneSample, kLaneCount> gLaneSamples{};
++std::array<DiscoveredLaneSample, kDiscoveredLaneCapacity> gDiscoveredLanes{};
+ 
+ std::atomic<bool> gInitialized{false};
+ std::atomic<bool> gActive{false};
+@@ -130,6 +152,8 @@
+ std::atomic<bool> gInitialReportWritten{false};
+ std::atomic<std::uint64_t> gReportSequence{0};
+ std::atomic<std::uint64_t> gUnsupportedLaneHits{0};
++std::atomic<std::uint64_t> gDynamicallyNormalizedLaneHits{0};
++std::atomic<std::uint64_t> gDiscoveredLaneCapacityMisses{0};
+ std::atomic<std::uint64_t> gInvalidValueHits{0};
+ std::atomic<std::uint64_t> gSignatureProbeAttempts{0};
+ std::atomic<DWORD> gSignatureWaitElapsedMs{0};
+@@ -300,6 +324,9 @@
+     settings.normalizeTarget = GetPrivateProfileIntW(
+         L"NativeHudNormalization", L"NormalizeTarget", 1,
+         widePath.c_str()) != 0;
++    settings.normalizeDiscoveredHudLanes = GetPrivateProfileIntW(
++        L"NativeHudNormalization", L"NormalizeDiscoveredHudLanes", 1,
++        widePath.c_str()) != 0;
+     settings.singleBarUnits = ReadIniFloat(
+         path, L"NativeHudNormalization", L"SingleBarUnits",
+         kDefaultSingleBarUnits);
+@@ -332,6 +359,70 @@
+     return false;
+ }
+ 
++bool ShouldNormalizeDiscoveredLane() noexcept {
++    return gSettings.enabled && gSettings.normalizeAllHudLanes &&
++           gSettings.normalizeDiscoveredHudLanes;
++}
++
++DiscoveredLaneSample* FindOrClaimDiscoveredLane(
++    std::uintptr_t displacement) noexcept {
++    for (auto& sample : gDiscoveredLanes) {
++        if (sample.displacement.load(std::memory_order_acquire) == displacement) {
++            return &sample;
++        }
++    }
++    for (auto& sample : gDiscoveredLanes) {
++        std::uintptr_t expected = kUnclaimedDisplacement;
++        if (sample.displacement.compare_exchange_strong(
++                expected, displacement, std::memory_order_acq_rel)) {
++            return &sample;
++        }
++        if (expected == displacement) return &sample;
++    }
++    gDiscoveredLaneCapacityMisses.fetch_add(1, std::memory_order_relaxed);
++    return nullptr;
++}
++
++float NormalizeCurrentStateless(float current, float maximum) noexcept {
++    const double ratio = std::clamp(
++        static_cast<double>(current) / static_cast<double>(maximum), 0.0, 1.0);
++    float result = static_cast<float>(ratio * gSettings.singleBarUnits);
++    if (current > 0.0f && result <= 0.0f) {
++        result = std::numeric_limits<float>::min();
++    }
++    return result;
++}
++
++void RecordDiscoveredCurrent(
++    DiscoveredLaneSample* sample,
++    std::uintptr_t cockpit,
++    std::uint32_t currentBits,
++    std::uint32_t maximumBits,
++    std::uint32_t normalizedBits,
++    bool normalized) noexcept {
++    if (!sample) return;
++    sample->lastHudCockpit.store(cockpit, std::memory_order_relaxed);
++    sample->lastThreadId.store(GetCurrentThreadId(), std::memory_order_relaxed);
++    sample->lastCurrentBits.store(currentBits, std::memory_order_relaxed);
++    sample->lastMaximumBits.store(maximumBits, std::memory_order_relaxed);
++    sample->lastNormalizedCurrentBits.store(normalizedBits, std::memory_order_relaxed);
++    sample->currentHits.fetch_add(1, std::memory_order_relaxed);
++    if (normalized) sample->normalizedHits.fetch_add(1, std::memory_order_relaxed);
++}
++
++void RecordDiscoveredMaximum(
++    DiscoveredLaneSample* sample,
++    std::uintptr_t cockpit,
++    std::uint32_t maximumBits,
++    bool normalized) noexcept {
++    if (!sample) return;
++    sample->lastHudCockpit.store(cockpit, std::memory_order_relaxed);
++    sample->lastThreadId.store(GetCurrentThreadId(), std::memory_order_relaxed);
++    sample->lastMaximumBits.store(maximumBits, std::memory_order_relaxed);
++    sample->maximumHits.fetch_add(1, std::memory_order_relaxed);
++    if (normalized) sample->normalizedHits.fetch_add(1, std::memory_order_relaxed);
++}
++
+ bool IsPlausibleHealth(float current, float maximum) noexcept {
+     return std::isfinite(current) && std::isfinite(maximum) &&
+            current >= 0.0f && maximum > 0.0f &&
+@@ -385,13 +476,10 @@
+     }
+ }
+ 
+-float NormalizeCurrentForLane(std::size_t lane, float current,
+-                              float maximum) noexcept {
+-    if (!IsPlausibleHealth(current, maximum) || lane >= gLaneSamples.size()) {
+-        return current;
+-    }
++float NormalizeCurrentWithState(LaneSample& state, float current,
++                                float maximum) noexcept {
++    if (!IsPlausibleHealth(current, maximum)) return current;
+ 
+-    auto& state = gLaneSamples[lane];
+     const DWORD now = GetTickCount();
+     const float previousCurrent = BitsToFloat(
+         state.lastRealCurrentBits.load(std::memory_order_relaxed));
+@@ -569,6 +657,12 @@
+     return result;
+ }
+ 
++float NormalizeCurrentForLane(std::size_t lane, float current,
++                              float maximum) noexcept {
++    if (lane >= gLaneSamples.size()) return current;
++    return NormalizeCurrentWithState(gLaneSamples[lane], current, maximum);
++}
++
+ void RecordCurrentSample(std::size_t lane, std::uintptr_t cockpit,
+                          std::uint32_t originalCurrent,
+                          std::uint32_t originalMaximum,
+@@ -649,16 +743,39 @@
+             maximumBits);
+         const float current = BitsToFloat(originalBits);
+         const float maximum = BitsToFloat(maximumBits);
+-        if (gSettings.enabled && supportedLane && ShouldNormalizeLane(lane) &&
+-            haveMaximum && IsPlausibleHealth(current, maximum)) {
++        const bool plausible = haveMaximum && IsPlausibleHealth(current, maximum);
++        const bool normalizeKnown = gSettings.enabled && supportedLane &&
++            ShouldNormalizeLane(lane) && plausible;
++        const bool normalizeDiscovered = !supportedLane &&
++            ShouldNormalizeDiscoveredLane() && plausible;
++        if (normalizeKnown) {
+             replacementBits = FloatToBits(NormalizeCurrentForLane(lane, current, maximum));
+             normalized = true;
+             RecordCurrentSample(lane, cockpit, originalBits, maximumBits,
+                                 replacementBits);
++        } else if (normalizeDiscovered) {
++            auto* discovered = FindOrClaimDiscoveredLane(laneDisplacement);
++            replacementBits = FloatToBits(discovered
++                ? NormalizeCurrentWithState(
++                    discovered->transitionState, current, maximum)
++                : NormalizeCurrentStateless(current, maximum));
++            normalized = true;
++            gDynamicallyNormalizedLaneHits.fetch_add(1, std::memory_order_relaxed);
++            RecordDiscoveredCurrent(
++                discovered, cockpit, originalBits, maximumBits,
++                replacementBits, true);
+         } else if (supportedLane && haveMaximum) {
+             RecordCurrentSample(lane, cockpit, originalBits, maximumBits,
+                                 replacementBits);
+-            if (!IsPlausibleHealth(current, maximum)) {
++            if (!plausible) {
++                gInvalidValueHits.fetch_add(1, std::memory_order_relaxed);
++            }
++        } else if (!supportedLane && haveMaximum) {
++            RecordDiscoveredCurrent(
++                FindOrClaimDiscoveredLane(laneDisplacement),
++                cockpit, originalBits, maximumBits,
++                replacementBits, false);
++            if (!plausible) {
+                 gInvalidValueHits.fetch_add(1, std::memory_order_relaxed);
+             }
+         }
+@@ -666,16 +783,33 @@
+         originalBits = static_cast<std::uint32_t>(context.Xmm1.Low & 0xFFFFFFFFull);
+         replacementBits = originalBits;
+         const float maximum = BitsToFloat(originalBits);
+-        if (gSettings.enabled && supportedLane && ShouldNormalizeLane(lane) &&
+-            std::isfinite(maximum) && maximum > 0.0f &&
+-            maximum <= kMaximumPlausibleHealth) {
++        const bool plausibleMaximum = std::isfinite(maximum) && maximum > 0.0f &&
++            maximum <= kMaximumPlausibleHealth;
++        const bool normalizeKnown = gSettings.enabled && supportedLane &&
++            ShouldNormalizeLane(lane) && plausibleMaximum;
++        const bool normalizeDiscovered = !supportedLane &&
++            ShouldNormalizeDiscoveredLane() && plausibleMaximum;
++        if (normalizeKnown) {
+             replacementBits = FloatToBits(gSettings.singleBarUnits);
+             normalized = true;
+             RecordMaximumSample(lane, cockpit, originalBits, replacementBits);
++        } else if (normalizeDiscovered) {
++            replacementBits = FloatToBits(gSettings.singleBarUnits);
++            normalized = true;
++            gDynamicallyNormalizedLaneHits.fetch_add(1, std::memory_order_relaxed);
++            RecordDiscoveredMaximum(
++                FindOrClaimDiscoveredLane(laneDisplacement),
++                cockpit, originalBits, true);
+         } else if (supportedLane) {
+             RecordMaximumSample(lane, cockpit, originalBits, replacementBits);
+-            if (!std::isfinite(maximum) || maximum <= 0.0f ||
+-                maximum > kMaximumPlausibleHealth) {
++            if (!plausibleMaximum) {
++                gInvalidValueHits.fetch_add(1, std::memory_order_relaxed);
++            }
++        } else {
++            RecordDiscoveredMaximum(
++                FindOrClaimDiscoveredLane(laneDisplacement),
++                cockpit, originalBits, false);
++            if (!plausibleMaximum) {
+                 gInvalidValueHits.fetch_add(1, std::memory_order_relaxed);
+             }
+         }
+@@ -827,10 +961,12 @@
+            << "game base: " << HexPointer(gGameBase) << '\n'
+            << "single-bar units: " << std::fixed << std::setprecision(3)
+            << gSettings.singleBarUnits << '\n'
+-           << "normalize all five HUD lanes: "
++           << "normalize fixed five HUD lanes: "
+            << (gSettings.normalizeAllHudLanes ? "YES" : "NO") << '\n'
+            << "normalize player: " << (gSettings.normalizePlayer ? "YES" : "NO") << '\n'
+            << "normalize target: " << (gSettings.normalizeTarget ? "YES" : "NO") << '\n'
++           << "normalize discovered quest HUD lanes: "
++           << (gSettings.normalizeDiscoveredHudLanes ? "YES" : "NO") << '\n'
+            << "signature probe attempts: " << gSignatureProbeAttempts.load() << '\n'
+            << "signature wait elapsed ms: " << gSignatureWaitElapsedMs.load() << '\n'
+            << "HUD transition bridge: "
+@@ -855,6 +991,10 @@
+                << "  write failures: " << site.writeFailures.load() << '\n';
+     }
+     output << "unsupported lane hits: " << gUnsupportedLaneHits.load() << '\n'
++           << "dynamically normalized unsupported-lane hits: "
++           << gDynamicallyNormalizedLaneHits.load() << '\n'
++           << "discovered-lane registry capacity misses: "
++           << gDiscoveredLaneCapacityMisses.load() << '\n'
+            << "invalid value hits: " << gInvalidValueHits.load() << "\n\n";
+ 
+     output << "LANE SAMPLES\n------------------------------------------------------------\n";
+@@ -912,6 +1052,35 @@
+                << '\n';
+     }
+ 
++    output << "\nDISCOVERED QUEST/ADDITIONAL HUD LANES\n"
++           << "------------------------------------------------------------\n";
++    bool wroteDiscovered = false;
++    for (const auto& sample : gDiscoveredLanes) {
++        const auto displacement = sample.displacement.load(std::memory_order_acquire);
++        if (displacement == kUnclaimedDisplacement) continue;
++        wroteDiscovered = true;
++        output << "displacement=0x" << std::uppercase << std::hex
++               << displacement << std::dec
++               << " current-hits=" << sample.currentHits.load()
++               << " maximum-hits=" << sample.maximumHits.load()
++               << " normalized-hits=" << sample.normalizedHits.load()
++               << " HudCockpit=" << HexPointer(sample.lastHudCockpit.load())
++               << " thread=" << sample.lastThreadId.load() << '\n'
++               << "  last current=" << BitsToFloat(sample.lastCurrentBits.load())
++               << " last maximum=" << BitsToFloat(sample.lastMaximumBits.load())
++               << " normalized current="
++               << BitsToFloat(sample.lastNormalizedCurrentBits.load()) << '\n'
++               << "  transition-active="
++               << (sample.transitionState.transitionActive.load() ? "YES" : "NO")
++               << " starts=" << sample.transitionState.transitionStarts.load()
++               << " bridge-hits=" << sample.transitionState.transitionBridgeHits.load()
++               << " completions=" << sample.transitionState.transitionCompletions.load()
++               << " timeouts=" << sample.transitionState.transitionTimeouts.load()
++               << " cancels=" << sample.transitionState.transitionCancels.load()
++               << '\n';
++    }
++    if (!wroteDiscovered) output << "none observed\n";
++
+     output << "\nSAFETY BOUNDARY\n------------------------------------------------------------\n"
+            << "The native HUD hook writes only HudCockpit presentation fields. The separate\n"
+            << "automatic transformation correction may write Battle_Mob+0x100 only after\n"
+@@ -1218,6 +1387,10 @@
+     status.signatureProbeAttempts = gSignatureProbeAttempts.load(std::memory_order_relaxed);
+     status.signatureWaitElapsedMs = gSignatureWaitElapsedMs.load(std::memory_order_relaxed);
+     status.unsupportedLaneHits = gUnsupportedLaneHits.load(std::memory_order_relaxed);
++    status.dynamicallyNormalizedLaneHits =
++        gDynamicallyNormalizedLaneHits.load(std::memory_order_relaxed);
++    status.discoveredLaneCapacityMisses =
++        gDiscoveredLaneCapacityMisses.load(std::memory_order_relaxed);
+     status.invalidValueHits = gInvalidValueHits.load(std::memory_order_relaxed);
+ 
+     std::scoped_lock lock(gSiteStatusMutex);
+diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/src/hud_health_normalizer.h HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/src/hud_health_normalizer.h
+--- HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/src/hud_health_normalizer.h	2026-07-12 03:57:25.000000000 +0000
++++ HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/src/hud_health_normalizer.h	2026-07-18 00:12:00.931753240 +0000
+@@ -62,6 +62,8 @@
+     std::uint64_t signatureProbeAttempts = 0;
+     DWORD signatureWaitElapsedMs = 0;
+     std::uint64_t unsupportedLaneHits = 0;
++    std::uint64_t dynamicallyNormalizedLaneHits = 0;
++    std::uint64_t discoveredLaneCapacityMisses = 0;
+     std::uint64_t invalidValueHits = 0;
+     std::array<HudHealthHookSiteStatus, 2> sites{};
+ };
+diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/src/version.rc HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/src/version.rc
+--- HealthScale-1.0.1-fixed-source/src/native/HealthScale.Runtime/src/version.rc	2026-07-12 04:24:10.000000000 +0000
++++ HealthScale-1.1.0-quest-overhaul-source/src/native/HealthScale.Runtime/src/version.rc	2026-07-18 00:12:00.932600142 +0000
+@@ -1,8 +1,8 @@
+ #include <windows.h>
+ 
+ VS_VERSION_INFO VERSIONINFO
+- FILEVERSION 1,0,1,0
+- PRODUCTVERSION 1,0,1,0
++ FILEVERSION 1,1,0,0
++ PRODUCTVERSION 1,1,0,0
+  FILEFLAGSMASK 0x3fL
+ #ifdef _DEBUG
+  FILEFLAGS 0x1L
+@@ -19,11 +19,11 @@
+         BEGIN
+             VALUE "CompanyName", "HealthScale Project\0"
+             VALUE "FileDescription", "HealthScale Native Runtime\0"
+-            VALUE "FileVersion", "1.0.1.0\0"
++            VALUE "FileVersion", "1.1.0.0\0"
+             VALUE "InternalName", "xinput_other.dll\0"
+             VALUE "OriginalFilename", "xinput_other.dll\0"
+             VALUE "ProductName", "HealthScale Runtime\0"
+-            VALUE "ProductVersion", "1.0.1\0"
++            VALUE "ProductVersion", "1.1.0\0"
+         END
+     END
+     BLOCK "VarFileInfo"
+diff -ruN '--exclude=test-bin' '--exclude=LEGACY_*' HealthScale-1.0.1-fixed-source/tests/native/health_transition_model_tests.cpp HealthScale-1.1.0-quest-overhaul-source/tests/native/health_transition_model_tests.cpp
+--- HealthScale-1.0.1-fixed-source/tests/native/health_transition_model_tests.cpp	2026-07-12 04:23:01.000000000 +0000
++++ HealthScale-1.1.0-quest-overhaul-source/tests/native/health_transition_model_tests.cpp	2026-07-18 00:12:00.930642371 +0000
+@@ -160,6 +160,25 @@
+     ExpectNear(ComputeLiveHealthRatio(-10.0f, 100.0f), 0.0, 0.0);
+     ExpectNear(ComputeLiveHealthRatio(150.0f, 100.0f), 1.0, 0.0);
+ 
++    // Kaioken x20 cancellation can expose old-scale current HP after maximum HP
++    // already returned to base. This is a valid transitional pair and must not
++    // invalidate the fighter before HealthScale can preserve the prior ratio.
++    assert(IsPlausibleHealthPair(1730925.0f, 90000.0f, 256.0));
++    assert(!IsPlausibleHealthPair(1730925.0f, 90000.0f, 8.0));
++    assert(!IsPlausibleHealthPair(-2.0f, 90000.0f, 256.0));
++
++    // The first 90,000/90,000 sample after the x20 domain collapses is a target
++    // rebase baseline, not proof that the fighter should heal to 100%.
++    assert(IsTargetScaleRebaseAfterDecrease(
++        1800000.0f, 90000.0f, 90000.0f));
++    assert(IsTargetScaleRebaseAfterDecrease(
++        1800000.0f, 90000.0f, 72000.0f));
++    assert(!IsTargetScaleRebaseAfterDecrease(
++        1800000.0f, 90000.0f, 1730925.0f));
++    const double kaiokenHeldRatio = 1730925.0 / 1800000.0;
++    ExpectNear(kaiokenHeldRatio, 0.961625, 1.0e-9);
++    ExpectNear(kaiokenHeldRatio * 90000.0, 86546.25, 0.001);
++
+     assert(!IsHudLanePresentationLatched(0));
+     assert(IsHudLanePresentationLatched(1234));
+     // A stale writer heartbeat does not clear the HUD-presence latch. The two

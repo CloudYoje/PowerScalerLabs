@@ -1,0 +1,34 @@
+HEALTHSCALE 1.1.1 VALIDATION REPORT
+===================================
+
+RESULT
+------
+PASS: C++20 transition-model tests.
+PASS: AddressSanitizer + UndefinedBehaviorSanitizer model test run.
+PASS: Kaioken x20 mixed-domain pair accepted with no ratio ceiling.
+PASS: finite extreme mixed-domain pair above the former 256x limit accepted.
+PASS: maximum finite float current HP accepted with a positive finite maximum.
+PASS: negative current, zero maximum, infinity, and NaN rejected.
+PASS: no `kMaximumTransientHealthRatio` symbol remains in active source.
+PASS: no ratio-limit parameter remains in `IsPlausibleHealthPair`.
+PASS: existing target-rebase, stale-lease, temporary-zero, staged-transition,
+      domain, HUD-presence, and relapse regression tests.
+PASS: version resource updated to 1.1.1.
+PASS: no compiled test binaries included in this source package.
+
+MODEL OUTPUT
+------------
+Normal: health_transition_model_tests: PASS
+Sanitized: health_transition_model_tests: PASS
+
+SAFETY CONTRACT
+---------------
+Transformation magnitude is not used to validate a health pair. Safety remains
+based on Battle_Mob ownership, game vtable, memory range, finite values, positive
+maximum HP, transition coherence, and the no-zero-revival rule.
+
+NOT PERFORMED HERE
+------------------
+- MSVC Release|x64 compilation/link against the Windows SDK.
+- Live DBXV2 1.25.02.0 / XV2 Patcher 4.64 testing.
+- Runtime testing of a transformation above the former 256x ceiling.

@@ -1,0 +1,13 @@
+PASS strict UTF-8 decoding
+PASS source tree excludes generated binaries
+PASS XML/XAML parse (8 files)
+PASS XAML event handlers resolved (53)
+PASS external runtime remains read-only and HealthScaler-independent
+PASS semantic correlation is separated from generic repeatability
+PASS default Research view is Known effect + High-confidence only
+PASS validation ladder remains fail-closed and monotonic
+PASS sparse chronology and raw evidence separation preserved
+PASS real-data grouping: 20,245 raw -> 2,561 physical offsets
+PASS real-data semantic tiers: 2 Known, 4 High-confidence, 1,531 Promising, 1,024 Needs another trial
+PASS default focused view expected row count: 6
+PASS user-facing documentation updated for semantic focus behavior

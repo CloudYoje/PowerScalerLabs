@@ -1,0 +1,45 @@
+PowerScaler Labs — Chronological Telemetry Gate 1
+Packaging-environment static deep audit
+
+PASS  Strict UTF-8 decoding
+PASS  XML/XAML parsing
+PASS  C# lexical delimiter scan
+PASS  PowerShell lexical delimiter scan
+PASS  XAML handler resolution
+PASS  Protocol chronology contract
+PASS  Exact six focused chronology anchors — ['CurrentHealthOffset', 'MaximumHealthOffset', 'CurrentKiOffset', 'MaximumKiOffset', 'CurrentStaminaOffset', 'MaximumStaminaOffset']
+PASS  Chronology worker sequencing/barriers
+PASS  Default 25 ms chronology interval
+PASS  Broad runtime heartbeat unchanged at 100 ms
+PASS  Focused fail-closed read path
+PASS  Known-readable address overflow guard
+PASS  External read-only runtime boundary
+PASS  Read-only process access mask
+PASS  App chronology start/stop barriers
+PASS  Stop waits for active poll completion
+PASS  Start waits for focused initial anchors
+PASS  Chronology persistence and diagnostics
+PASS  Chronology review UI
+PASS  Scanner decluttering retained
+PASS  No generated binaries in source tree
+PASS  Windows PowerShell StrictMode array safety
+PASS  ChronologyStatus constructor arity — 30 args vs 30 fields
+PASS  Audit scripts cover new_chronology_epoch
+PASS  Audit scripts cover WaitForRuntimeQueuesAsync
+PASS  Audit scripts cover EpochPollCount
+PASS  Audit scripts cover InvalidatedSampleCount
+
+Metrics:
+- text_files: 58
+- xml_files: 8
+- xaml_handlers: 54
+- default_reads_per_second: 480
+- max_display_rows: 1000
+- queue_bound: 20000
+- batch_bound: 4096
+- chronology_status_fields: 30
+- chronology_status_ctor_args: 30
+
+NOT RUN  Windows dotnet restore/build/publish
+NOT RUN  Windows PowerShell execution
+NOT RUN  DBXV2 live cadence, CPU, frame-time, storage, queue, or coexistence test

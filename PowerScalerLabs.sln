@@ -1,0 +1,33 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.7.11919.86 stable
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PowerScalerLabs.Protocol", "src\PowerScalerLabs.Protocol\PowerScalerLabs.Protocol.csproj", "{6F91C038-119D-4C69-A07C-F1A5A51A6481}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PowerScalerLabs.Runtime", "src\PowerScalerLabs.Runtime\PowerScalerLabs.Runtime.csproj", "{87243AAA-6CA4-456C-9C06-7FCE242AFB7A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PowerScalerLabs.App", "src\PowerScalerLabs.App\PowerScalerLabs.App.csproj", "{1F7559CB-A08A-4694-B72F-B6394414D8A8}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6F91C038-119D-4C69-A07C-F1A5A51A6481}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6F91C038-119D-4C69-A07C-F1A5A51A6481}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6F91C038-119D-4C69-A07C-F1A5A51A6481}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6F91C038-119D-4C69-A07C-F1A5A51A6481}.Release|Any CPU.Build.0 = Release|Any CPU
+		{87243AAA-6CA4-456C-9C06-7FCE242AFB7A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{87243AAA-6CA4-456C-9C06-7FCE242AFB7A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{87243AAA-6CA4-456C-9C06-7FCE242AFB7A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{87243AAA-6CA4-456C-9C06-7FCE242AFB7A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1F7559CB-A08A-4694-B72F-B6394414D8A8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1F7559CB-A08A-4694-B72F-B6394414D8A8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1F7559CB-A08A-4694-B72F-B6394414D8A8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1F7559CB-A08A-4694-B72F-B6394414D8A8}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

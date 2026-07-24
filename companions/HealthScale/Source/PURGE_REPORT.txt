@@ -1,0 +1,19 @@
+HEALTHSCALE PURGE REPORT
+========================
+
+Input: XV2PowerScaler-master(1).zip
+Original file count: 488
+Retained file count before this report: 20
+
+Scope retained:
+- percentage-based native health-bar normalization
+- current/max HP acquisition
+- maximum-health change detection
+- percentage-preserving correction
+- transformation-chain health handling
+- temporary zero-frame handling
+- player/target HUD transition ownership
+- XInput proxy loading required by xinput_other.dll
+- health-only logging, configuration, build files, and tests
+
+Everything else was discarded rather than disabled.

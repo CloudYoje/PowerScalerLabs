@@ -1,0 +1,44 @@
+HEALTHSCALE 1.1.0 VALIDATION REPORT
+===================================
+
+RESULT
+------
+PASS: pure C++20 transition-model tests.
+PASS: Kaioken x20 mixed-domain pair accepted at 256x bound and rejected at the
+      former 8x bound.
+PASS: target-domain rebase detection for 1,800,000 -> 90,000 decrease.
+PASS: expected 96.1625% -> 86,546.25 HP arithmetic.
+PASS: existing stale-lease, zero-frame, recovery, staged-transition, domain,
+      HUD-presence and relapse regression tests.
+PASS: AddressSanitizer and UndefinedBehaviorSanitizer model test run.
+PASS: all six native runtime C++ translation units passed Clang C++20 syntax
+      checking with -Wall -Wextra -Wpedantic and Windows declaration stubs.
+PASS: Visual Studio project continues to reference only retained health-only
+      source files.
+PASS: no compiled test binaries included in this source package.
+
+NOT PERFORMED HERE
+------------------
+- MSVC Release|x64 compilation/link against the Windows SDK.
+- Live DBXV2 1.25.02.0 / XV2 Patcher 4.64 testing.
+- Confirmation of the exact quest HUD displacements on the user's machine.
+
+EXPECTED LIVE LOG / REPORT
+--------------------------
+Kaioken x20 cancellation should produce a sequence similar to:
+
+  MAX-HP CHANGE ... old-ratio=X
+  CORRECTION QUEUED ... preserved-ratio=X ratio-source=live-pre-change
+  CORRECTION TARGET-DOMAIN REBASE ... held-ratio=X
+  CORRECTION APPLIED ... tracked-ratio=X
+
+The normalized quest report should show:
+
+  normalize discovered quest HUD lanes: YES
+  dynamically normalized unsupported-lane hits: > 0
+  discovered-lane registry capacity misses: 0
+  DISCOVERED QUEST/ADDITIONAL HUD LANES
+
+The original unsupported-lane counter can remain nonzero: in 1.1.0 it records
+that the displacement was outside the legacy five-lane table, while the new
+counter proves those plausible writes were normalized instead of passed through.

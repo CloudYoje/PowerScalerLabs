@@ -1,0 +1,66 @@
+HEALTHSCALE 1.0.1 LIVE-RATIO REPAIR
+===================================
+
+PROBLEM CONFIRMED FROM LIVE LOG
+-------------------------------
+A completed health-scale transition left a domain lease active. The lease's
+tracked ratio was updated only while current HP was numerically distinguishable
+from the canonical health range. After ordinary combat damage lowered current HP
+into the overlapping range, the lease stopped tracking the fighter's live ratio.
+
+When the next maximum-HP change began, QueueCorrection preferred that stale lease
+ratio over the live pre-change current/max ratio. This caused unintended healing
+on detransformation and later chained transformations.
+
+FIX
+---
+1. Every distinct maximum-health change now computes its starting percentage
+   exclusively from the live pre-change values:
+
+       ratio = state.currentHp / state.maximumHp
+
+2. The domain lease remains available only to identify/remap late canonical-scale
+   current-HP writes while a scaled maximum is active. It cannot seed a later
+   maximum-health transition.
+3. The queue log identifies the source and exposes the discarded lease value:
+
+       ratio-source=live-pre-change prior-lease-ratio=...
+
+4. Temporary-zero handling is unchanged: zero frames freeze the live ratio and
+   the first recovered nonzero frame is baseline-only.
+5. Same-transition staged maximum changes that occur while one correction is
+   still pending continue to carry the pending ratio. This is intentional and
+   distinct from starting a later health alteration after the previous one has
+   completed.
+
+REGRESSION CASES FROM THE USER'S LOG
+------------------------------------
+Case A: detransformation
+    live pre-change: 1965.425 / 4203.245 ~= 46.7597%
+    stale lease:                              62.5052%
+    new maximum: 2101.622
+    fixed starting result: approximately 982.712 HP before any later delta
+
+Case B: later 2x -> 3x transformation
+    live pre-change: 1772.790 / 4203.245 ~= 42.1767%
+    stale lease:                              46.0152%
+    new maximum: 6304.867
+    fixed starting result: approximately 2659.185 HP before transition damage
+
+VALIDATION
+----------
+PASS: pure C++20 transition-model tests.
+PASS: both live-log stale-lease regression cases.
+PASS: zero-on-entry, repeated-zero, recovery-baseline, and post-recovery damage.
+PASS: AddressSanitizer and UndefinedBehaviorSanitizer model test run.
+PASS: all six runtime translation units passed Clang C++20 syntax checking with
+      warnings enabled and Windows declaration stubs.
+PASS: no PowerScaler Studio, Saga Workshop, lore, discovery, camera, perception,
+      Ki/stamina, or combat-scaling source was reintroduced.
+
+REMAINING LIVE TEST
+-------------------
+Build Release|x64 in Visual Studio, install the new xinput_other.dll, clear the
+old HealthScale.Runtime.log, then repeat the same transformation sequence. For
+each new CORRECTION QUEUED line, preserved-ratio must match the immediately
+preceding MAX-HP CHANGE old-ratio (apart from printed float precision).

@@ -1,0 +1,14 @@
+{
+  "id": "healthscale",
+  "displayName": "HealthScale",
+  "version": "1.1.1",
+  "boundary": "sealed-companion",
+  "runtimeFile": "xinput_other.dll",
+  "configurationFile": "HealthScale.ini",
+  "installTarget": "DB Xenoverse 2\\bin",
+  "supportedGameVersion": "1.25.02.0",
+  "supportedPatcherVersion": "4.64",
+  "sourceSolution": "Source\\HealthScale.sln",
+  "sourceProject": "Source\\src\\native\\HealthScale.Runtime\\HealthScale.Runtime.vcxproj",
+  "payloadDirectory": "Companions\\HealthScale\\Payload"
+}

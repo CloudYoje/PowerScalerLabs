@@ -1,0 +1,23 @@
+PowerScaler Labs — Runtime Access Architecture Gate 0 Build Hotfix 1 + HealthScale Companion 1
+
+SOURCE VALIDATION COMPLETED
+- Scanner-control TelemetryEventMessage construction now supplies the schema-7 FighterIdentityKey as explicit null.
+- HealthScaleCompanionManager explicitly imports System.IO for its file-system types.
+- HealthScale companion publish audit validates the composed Companions\HealthScale\Payload route through the publisher variables and copy/hash staging commands.
+- Publish verifier checks the centralized SupportedGameVersion invariant instead of the retired ExpectedGameVersion token.
+- Protocol schema 7 defines runtime-access status, provider reports, address provenance, raw observations, read budgets, comparison policy, and fighter generations.
+- ExternalCapabilityObserver no longer owns the patcher-specific BattleCore route.
+- Historical XV2 Patcher resolution is isolated behind IBattleCoreLocator.
+- Provider conflict behavior is fail-closed.
+- Direct DBXV2 signature discovery remains disabled pending separate research.
+- The compressed-scale comparison policy recognizes 0.01 changes.
+- Chronology continues exact raw-bit comparison.
+- Session schema 7 persists raw memory facts and a runtime-access architecture snapshot.
+- HealthScale 1.1.1 remains independently sourced, built, installed, verified, and removed.
+
+PRE-GAME WINDOWS VALIDATION REQUIRED
+- Run TEST_RUNTIME_ACCESS_ARCHITECTURE.cmd.
+- Run PUBLISH_WINDOWS.cmd with .NET SDK 8.0.403 and the Visual C++ desktop toolchain.
+- Complete RUNTIME_ACCESS_ARCHITECTURE_GATE0_TEST.md before adding hooks, writes, causal probes, or scaling.
+
+No Windows compilation or live DBXV2 success is claimed from this packaging environment.
