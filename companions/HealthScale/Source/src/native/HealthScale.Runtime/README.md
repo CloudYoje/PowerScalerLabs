@@ -1,6 +1,6 @@
 # HealthScale Runtime 1.1.1 Candidate
 
-Health-only native runtime for DBXV2 1.25.02.0 / XV2 Patcher 4.64.
+Health-only native runtime with no hard DBXV2 or XV2 Patcher version gate.
 
 ## Added in 1.1.1
 
@@ -9,6 +9,13 @@ Health-only native runtime for DBXV2 1.25.02.0 / XV2 Patcher 4.64.
 - keeps ownership, vtable, memory-range, finite-value, positive-maximum, zero-HP,
   and transition-coherence checks as the safety boundary;
 - retains the 1.1.0 quest/additional HUD-lane discovery and target-rebase repair.
+
+## Compatibility policy
+
+- detected executable and patcher versions are diagnostic only;
+- exact HUD writer signatures must match before hooks activate;
+- the BattleCore route must produce a structurally valid candidate;
+- incompatible layouts fail closed without a version allowlist.
 
 ## Safety
 

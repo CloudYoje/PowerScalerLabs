@@ -5,53 +5,22 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $script:Utf8Strict = New-Object System.Text.UTF8Encoding -ArgumentList $false, $true
-
 function Read-Utf8Text {
     param([Parameter(Mandatory)][string]$Path)
     return [System.IO.File]::ReadAllText($Path, $script:Utf8Strict)
-}
-
-function Read-Utf8Lines {
-    param([Parameter(Mandatory)][string]$Path)
-    return [System.IO.File]::ReadAllLines($Path, $script:Utf8Strict)
 }
 
 $root = Split-Path -Parent $PSScriptRoot
 $required = @(
     'PowerScalerLabs.sln',
     'README.md',
-    'CAPABILITY_SCANNER_TEST.md',
-    'DEEP_AUDIT_REPORT.md',
-    'DECLUTTER_CHRONOLOGY_AUDIT.md',
-    'SCANNER_DECLUTTER_GATE2_AUDIT.md',
-    'SCANNER_DECLUTTER_GATE2_DEEP_AUDIT.txt',
-    'CHRONOLOGICAL_TELEMETRY_AUDIT.md',
-    'CHRONOLOGICAL_TELEMETRY_TEST.md',
-    'CHRONOLOGICAL_TELEMETRY_DEEP_AUDIT.txt',
-    'GUIDED_OVERLAY_TEST.md',
-    'GUIDED_OVERLAY_AUDIT.md',
-    'HEALTHSCALE_COMPANION_AUDIT.md',
-    'HEALTHSCALE_COMPANION_TEST.md',
-    'RUNTIME_ACCESS_ARCHITECTURE_GATE0_AUDIT.md',
-    'RUNTIME_ACCESS_ARCHITECTURE_GATE0_TEST.md',
-    'RUNTIME_ACCESS_ARCHITECTURE_GATE0_DEEP_AUDIT.txt',
-    'RUNTIME_ACCESS_ARCHITECTURE_GATE0_PUBLISH_HOTFIX1_AUDIT.md',
-    'RUNTIME_ACCESS_ARCHITECTURE_GATE0_PUBLISH_HOTFIX2_AUDIT.md',
-    'RUNTIME_ACCESS_ARCHITECTURE_GATE0_BUILD_HOTFIX1_AUDIT.md',
-    'TEST_RUNTIME_ACCESS_ARCHITECTURE.cmd',
-    'VALIDATION_REPORT.txt',
+    'CAUSAL_RESEARCH_CLEANUP_AUDIT.md',
     'BUILD_ID.txt',
-    'scripts\Import-PreviousData.ps1',
-    'scripts\Deep-Audit-DeclutterChronology.ps1',
-    'scripts\Deep-Audit-ChronologicalTelemetry.ps1',
-    'scripts\Deep-Audit-HealthScaleCompanion.ps1',
-    'scripts\Deep-Audit-RuntimeAccessArchitecture.ps1',
-    'IMPORT_PREVIOUS_DATA.cmd',
-    'OPEN_DATA.cmd',
     'global.json',
     'Directory.Build.props',
     'src\PowerScalerLabs.Protocol\PowerScalerLabs.Protocol.csproj',
     'src\PowerScalerLabs.Protocol\RuntimeProtocol.cs',
+    'src\PowerScalerLabs.Protocol\ProbeProtocol.cs',
     'src\PowerScalerLabs.Runtime\PowerScalerLabs.Runtime.csproj',
     'src\PowerScalerLabs.Runtime\Program.cs',
     'src\PowerScalerLabs.Runtime\RuntimeHost.cs',
@@ -71,16 +40,18 @@ $required = @(
     'src\PowerScalerLabs.App\App.xaml.cs',
     'src\PowerScalerLabs.App\MainWindow.xaml',
     'src\PowerScalerLabs.App\MainWindow.xaml.cs',
+    'src\PowerScalerLabs.App\ProbeHostClient.cs',
+    'src\PowerScalerLabs.ProbeHost\PowerScalerLabs.ProbeHost.csproj',
+    'src\PowerScalerLabs.ProbeHost\ProbeHostService.cs',
+    'src\PowerScalerLabs.ProbeHost\ProbeInjector.cs',
+    'src\PowerScalerLabs.ProbeHost\RemoteModuleResolver.cs',
+    'src\PowerScalerLabs.ProbeHost\ProbeSharedMemory.cs',
+    'src\native\PowerScalerLabs.ProbeShared\PowerScalerProbeAbi.h',
+    'src\native\PowerScalerLabs.NativeProbe\PowerScalerLabs.NativeProbe.vcxproj',
+    'src\native\PowerScalerLabs.NativeProbe\dllmain.cpp',
+    'NATIVE_CAUSAL_PROBE_FOUNDATION_AUDIT.md',
     'src\PowerScalerLabs.App\Models\TelemetryViewModels.cs',
     'src\PowerScalerLabs.App\Companions\HealthScaleCompanionManager.cs',
-    'src\PowerScalerLabs.App\Overlay\ExperimentCatalog.cs',
-    'src\PowerScalerLabs.App\Overlay\OverlayViewState.cs',
-    'src\PowerScalerLabs.App\Overlay\GlobalHotKey.cs',
-    'src\PowerScalerLabs.App\Overlay\ExperimentOverlayWindow.xaml',
-    'src\PowerScalerLabs.App\Overlay\ExperimentOverlayWindow.xaml.cs',
-    'src\PowerScalerLabs.App\Recording\SessionRecorder.cs',
-    'src\PowerScalerLabs.App\Recording\CandidateStore.cs',
-    'src\PowerScalerLabs.App\Recording\CandidateGroupBuilder.cs',
     'src\PowerScalerLabs.App\Assets\PowerScaler.ico',
     'src\PowerScalerLabs.App\Assets\PowerScalerIcon.png',
     'companions\HealthScale\companion-manifest.json',
@@ -90,7 +61,6 @@ $required = @(
     'companions\HealthScale\Source\src\native\HealthScale.Runtime\HealthScale.Runtime.vcxproj',
     'companions\HealthScale\Source\src\native\HealthScale.Runtime\HealthScale.ini'
 )
-
 foreach ($relativePath in $required) {
     $fullPath = Join-Path $root $relativePath
     if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
@@ -98,11 +68,20 @@ foreach ($relativePath in $required) {
     }
 }
 
+foreach ($retiredPath in @(
+    'src\PowerScalerLabs.App\Overlay',
+    'src\PowerScalerLabs.App\Recording'
+)) {
+    if (Test-Path -LiteralPath (Join-Path $root $retiredPath)) {
+        throw "Retired app subsystem is still present: $retiredPath"
+    }
+}
+
 $manifestPath = Join-Path $root 'PACKAGE_MANIFEST.sha256'
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
     throw 'PACKAGE_MANIFEST.sha256 is missing.'
 }
-foreach ($line in (Read-Utf8Lines -Path $manifestPath)) {
+foreach ($line in [System.IO.File]::ReadAllLines($manifestPath, $script:Utf8Strict)) {
     if ([string]::IsNullOrWhiteSpace($line)) { continue }
     if ($line -notmatch '^([0-9a-fA-F]{64}) \*(.+)$') {
         throw "Malformed package-manifest line: $line"
@@ -128,8 +107,7 @@ foreach ($file in $xmlFiles) {
 
 $runtimeText = (Get-ChildItem -LiteralPath (Join-Path $root 'src\PowerScalerLabs.Runtime') -Filter '*.cs' -File |
     ForEach-Object { Read-Utf8Text -Path $_.FullName }) -join "`n"
-
-$bannedRuntimeTokens = @(
+foreach ($token in @(
     'WriteProcessMemory',
     'VirtualAllocEx',
     'CreateRemoteThread',
@@ -137,53 +115,31 @@ $bannedRuntimeTokens = @(
     'PROCESS_ALL_ACCESS',
     'ProcessVmWrite',
     'ProcessCreateThread',
-    'SetWindowsHookEx',
-    'xinput_other.dll'
-)
-foreach ($token in $bannedRuntimeTokens) {
+    'SetWindowsHookEx'
+)) {
     if ($runtimeText.IndexOf($token, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
-        throw "Forbidden runtime token found: $token"
+        throw "Forbidden managed-runtime token found: $token"
     }
 }
-
-$requiredRuntimeTokens = @(
+foreach ($token in @(
     'ReadProcessMemory',
     'VirtualQueryEx',
     'ProcessVmRead',
     'ProcessQueryLimitedInformation',
-    'xinput1_3.dll',
-    '0x2080C8',
-    '0x3A58',
+    'BattleCoreLocatorCoordinator',
     'ObjectCapabilityScanner',
-    'capture_baseline',
-    'compare_after',
-    'capture_full_snapshot',
-    'ContinuousDelta',
-    'FollowPointers',
-    'MaximumChildObjects',
-    'MaximumCompleteCaptureObservations',
-    'MaximumContinuousObservations',
-    'EstimateObservationCount',
-    'CanCaptureComplete',
-    'PipeOptions.CurrentUserOnly',
-    'UnsupportedGameBuild',
-    'SupportedGameVersion = "1.25.2.0"',
     'ChronologySampler',
-    'TryReadKnownReadable',
-    'configure_chronology',
-    'reset_chronology',
     'new_chronology_epoch',
-    'MaximumChronologyBatch'
-)
-foreach ($token in $requiredRuntimeTokens) {
+    'FighterIdentityMessage'
+)) {
     if ($runtimeText.IndexOf($token, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
-        throw "Required runtime-architecture token is missing: $token"
+        throw "Required research-runtime primitive is missing: $token"
     }
 }
 
 $protocolText = Read-Utf8Text -Path (Join-Path $root 'src\PowerScalerLabs.Protocol\RuntimeProtocol.cs')
-$protocolRequirements = @(
-    'ProtocolVersion = 7',
+foreach ($token in @(
+    'ProtocolVersion = 8',
     'ObservedFighterSlotCount = 14',
     'CurrentHealthOffset = 0x100',
     'MaximumHealthOffset = 0x104',
@@ -191,131 +147,116 @@ $protocolRequirements = @(
     'MaximumKiOffset = 0x110',
     'CurrentStaminaOffset = 0x16C',
     'MaximumStaminaOffset = 0x170',
-    'ScannerConfiguration',
-    'ScannerObservationMessage',
-    'ScannerStatusMessage',
     'ChronologyConfiguration',
-    'ChronologyWatchTarget',
     'ChronologySampleMessage',
-    'ChronologyStatusMessage',
-    'EpochInitialSampleCount',
-    'EpochPollCount',
-    'InvalidatedSampleCount',
-    'MonotonicTicks',
-    'MonotonicFrequency',
-    'Float32',
-    'Int32',
-    'UInt32',
-    'Pointer64',
-    'FighterIdentityMessage',
-    'RawMemoryObservationMessage',
-    'AddressProvenanceEntry',
-    'BattleCoreLocatorReport',
-    'MemoryAccessMetricsMessage',
-    'ComparisonPolicyMessage',
     'RuntimeAccessStatusMessage'
-)
-foreach ($token in $protocolRequirements) {
+)) {
     if ($protocolText.IndexOf($token, [System.StringComparison]::Ordinal) -lt 0) {
-        throw "Protocol requirement is missing: $token"
+        throw "Protocol invariant is missing: $token"
+    }
+}
+
+$probeProtocolText = Read-Utf8Text -Path (Join-Path $root 'src\PowerScalerLabs.Protocol\ProbeProtocol.cs')
+foreach ($token in @(
+    'PowerScalerLabs.ProbeHost.CausalResearchGate',
+    'ProtocolVersion = 1',
+    'NativeAbiVersion = 1',
+    'ProbeStatusMessage',
+    'ProbeCommand'
+)) {
+    if ($probeProtocolText.IndexOf($token, [System.StringComparison]::Ordinal) -lt 0) {
+        throw "Probe protocol invariant is missing: $token"
+    }
+}
+
+$solutionText = Read-Utf8Text -Path (Join-Path $root 'PowerScalerLabs.sln')
+foreach ($token in @('PowerScalerLabs.ProbeHost', 'PowerScalerLabs.NativeProbe')) {
+    if ($solutionText.IndexOf($token, [System.StringComparison]::Ordinal) -lt 0) {
+        throw "Probe project is missing from the solution: $token"
+    }
+}
+
+$probeHostText = (Get-ChildItem -LiteralPath (Join-Path $root 'src\PowerScalerLabs.ProbeHost') -Filter '*.cs' -File |
+    ForEach-Object { Read-Utf8Text -Path $_.FullName }) -join "`n"
+foreach ($token in @('ProcessVmWrite', 'ProcessVmOperation', 'ProcessCreateThread')) {
+    if ($runtimeText.IndexOf($token, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        throw "Probe privilege leaked into passive Runtime: $token"
+    }
+}
+foreach ($token in @('WriteProcessMemory', 'VirtualAllocEx', 'CreateRemoteThread', 'PSL_Initialize', 'PSL_PrepareUnload')) {
+    if ($probeHostText.IndexOf($token, [System.StringComparison]::Ordinal) -lt 0) {
+        throw "Required isolated ProbeHost capability is missing: $token"
+    }
+}
+
+$nativeText = (Get-ChildItem -LiteralPath (Join-Path $root 'src\native\PowerScalerLabs.NativeProbe') -Recurse -File |
+    Where-Object { $_.Extension -in @('.cpp', '.h') } |
+    ForEach-Object { Read-Utf8Text -Path $_.FullName }) -join "`n"
+foreach ($forbidden in @('AddVectoredExceptionHandler', 'WriteProcessMemory', 'DR0', 'EXCEPTION_SINGLE_STEP')) {
+    if ($nativeText.IndexOf($forbidden, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        throw "Deferred instrumentation appeared in NativeProbe: $forbidden"
     }
 }
 
 $appText = (Get-ChildItem -LiteralPath (Join-Path $root 'src\PowerScalerLabs.App') -Recurse -Filter '*.cs' -File |
     ForEach-Object { Read-Utf8Text -Path $_.FullName }) -join "`n"
-$appRequirements = @(
-    'scanner-observations.jsonl',
-    'frames.jsonl',
-    'events.jsonl',
-    'chronology-samples.jsonl',
-    'chronology-watchlist.json',
-    'session.json',
-    'candidates.json',
-    'findings.json',
-    'ObserveScanner',
-    'ActionEvidenceRecord',
-    'PromoteToSolid',
-    'RejectAsNoise',
-    'AssignLabel',
-    'AssignClassification',
-    'RestoreAutomaticClassification',
-    'CandidateTaxonomy',
-    'ClassificationScores',
-    'ValueShape',
-    'LocalApplicationData',
-    'classification-index.json',
-    'ByStat',
-    'ByRole',
-    'ByStatus',
-    'ByTier',
-    'ByValidation',
-    'physical-groups.json',
-    'RecordCodeAnchor',
-    'RecordCausalValidation',
-    'MarkVerified',
-    'SlotEvidenceRecord',
-    'ActionSlotEvidenceRecord',
-    'BulkObservableCollection',
-    'AutoFlush = false',
-    'HealthScalerBoundaryPreserved',
-    'ReadOnlyExternalRuntime',
+foreach ($retiredToken in @(
+    'SessionRecorder',
+    'CandidateStore',
+    'CandidateGroupBuilder',
     'ExperimentOverlayWindow',
+    'GlobalHotKey.Register',
     'CaptureGuidedBaselineAsync',
     'CompareGuidedResultsAsync',
-    'RepeatGuidedTestAsync',
-    'CancelGuidedTestAsync',
-    'GlobalHotKey.Register',
-    'Key.F11',
+    'StartGuidedRecordingAsync'
+)) {
+    if ($appText.IndexOf($retiredToken, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        throw "Retired app workflow token is still compiled: $retiredToken"
+    }
+}
+foreach ($requiredToken in @(
+    'FighterRows',
     'ChronologyRows',
-    'ApplyChronologyStatus',
-    'StartGuidedRecordingAsync',
-    'new_chronology_epoch',
-    'WaitForChronologyStateAsync',
-    'WaitForRuntimeQueuesAsync',
+    'FindingRows',
     'HealthScaleCompanionManager',
-    'InstallOrAdopt',
-    'HealthScaleUninstallResult',
-    'InstalledDllHash',
-    'ConfigurationCreatedByManager'
-)
-foreach ($token in $appRequirements) {
-    if ($appText.IndexOf($token, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
-        throw "Recording or candidate-retention requirement is missing: $token"
+    'new_chronology_epoch',
+    'pause_chronology',
+    'resume_chronology'
+)) {
+    if ($appText.IndexOf($requiredToken, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        throw "Clean research-app requirement is missing: $requiredToken"
     }
 }
 
 $mainWindowXaml = Read-Utf8Text -Path (Join-Path $root 'src\PowerScalerLabs.App\MainWindow.xaml')
-$layoutRequirements = @(
-    'Width="880"',
-    'Height="590"',
-    'MinWidth="700"',
-    'MinHeight="460"',
-    'WindowStartupLocation="Manual"',
+foreach ($requiredToken in @(
+    'Content="Fighters"',
+    'Content="Research"',
+    'Content="Findings"',
+    'Content="Diagnostics"',
+    'Content="Tools"',
+    'Live fighter registry',
+    'Native causal probe',
+    'Durable findings',
+    'HealthScale 1.1.1 companion'
+    'Attach Probe'
+    'Detach Probe'
+)) {
+    if ($mainWindowXaml.IndexOf($requiredToken, [System.StringComparison]::Ordinal) -lt 0) {
+        throw "Clean application layout requirement is missing: $requiredToken"
+    }
+}
+foreach ($retiredToken in @(
     'Capability Scanner',
     'Capture Baseline',
     'Compare After Action',
     'Full Snapshot',
     'Candidates &amp; Findings',
-    'Follow object pointers (bounded depth)',
-    'All stat families',
-    'Assign Class',
-    'Auto Classify',
-    'Preferred type',
-    'All validation stages',
-    'Research view',
-    'Open Test Overlay',
     'Open Guided Overlay',
-    'Chronological changes',
-    'ChronologyStatusText',
-    'ChronologyMetricsText',
-    'Companion Apps',
-    'HealthScale 1.1.1',
-    'Install / Adopt',
-    'Boundary guarantees'
-)
-foreach ($requirement in $layoutRequirements) {
-    if ($mainWindowXaml.IndexOf($requirement, [System.StringComparison]::Ordinal) -lt 0) {
-        throw "Capability Scanner layout requirement is missing: $requirement"
+    'Start Recording'
+)) {
+    if ($mainWindowXaml.IndexOf($retiredToken, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        throw "Retired workflow is still visible in MainWindow.xaml: $retiredToken"
     }
 }
 
@@ -328,122 +269,7 @@ foreach ($match in $handlerMatches) {
     }
 }
 
-
-$overlayXamlPath = Join-Path $root 'src\PowerScalerLabs.App\Overlay\ExperimentOverlayWindow.xaml'
-$overlayCodePath = Join-Path $root 'src\PowerScalerLabs.App\Overlay\ExperimentOverlayWindow.xaml.cs'
-$overlayXaml = Read-Utf8Text -Path $overlayXamlPath
-$overlayCode = Read-Utf8Text -Path $overlayCodePath
-$overlayRequirements = @(
-    'Topmost="True"',
-    'CategoryListBox',
-    'TestListBox',
-    'Capture Baseline',
-    'Compare Results',
-    'Repeat Test',
-    'Full Snapshot',
-    'Cancel Test',
-    'Start Recording',
-    'CHANGED',
-    'STABLE',
-    'PENDING',
-    'Mouse: click any test',
-    'Enter confirm',
-    'Esc/Backspace go back or cancel',
-    'F11 hide/show'
-)
-foreach ($requirement in $overlayRequirements) {
-    if ($overlayXaml.IndexOf($requirement, [System.StringComparison]::Ordinal) -lt 0) {
-        throw "Guided overlay layout requirement is missing: $requirement"
-    }
-}
-
-$overlayHandlerMatches = [regex]::Matches($overlayXaml, '(?:Click|Loaded|PreviewKeyDown|SelectionChanged|MouseLeftButtonDown)="([A-Za-z_][A-Za-z0-9_]*)"')
-foreach ($match in $overlayHandlerMatches) {
-    $handler = $match.Groups[1].Value
-    if ($overlayCode.IndexOf($handler + '(', [System.StringComparison]::Ordinal) -lt 0) {
-        throw "Guided overlay XAML event handler is missing: $handler"
-    }
-}
-
-foreach ($token in @('Key.Left', 'Key.Right', 'Key.Up', 'Key.Down', 'Key.Enter', 'Key.Escape', 'Key.Back', 'CategoryListBox.Focus', 'TestListBox.Focus', 'CategoryListBox.IsEnabled', 'TestListBox.IsEnabled', 'Button.ClickEvent')) {
-    if ($overlayCode.IndexOf($token, [System.StringComparison]::Ordinal) -lt 0) {
-        throw "Guided overlay keyboard-navigation requirement is missing: $token"
-    }
-}
-if ($overlayCode.IndexOf('Key.F9', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
-    $overlayCode.IndexOf('Key.F10', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
-    throw 'F9/F10 test cycling was found. Test selection must remain menu-driven.'
-}
-
-if ($overlayCode.IndexOf('Task.Delay(250)', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
-    throw 'A fixed 250 ms scanner acknowledgement delay remains. Guided commands must await runtime state confirmation.'
-}
-if ($codeBehind.IndexOf('The armed baseline belongs to', [System.StringComparison]::Ordinal) -lt 0) {
-    throw 'Baseline/action-label mismatch protection is missing.'
-}
-
-$catalogText = Read-Utf8Text -Path (Join-Path $root 'src\PowerScalerLabs.App\Overlay\ExperimentCatalog.cs')
-foreach ($token in @('Resources', 'Damage', 'Defense', 'Transformation', 'Movement', 'Spend Ki', 'Spend Stamina', 'Take Damage', 'Use Strike Skill', 'Use Ki Blast Skill', 'Transform', 'De-transform')) {
-    if ($catalogText.IndexOf($token, [System.StringComparison]::Ordinal) -lt 0) {
-        throw "Guided experiment catalog requirement is missing: $token"
-    }
-}
-
-$startHere = Read-Utf8Text -Path (Join-Path $root 'START_HERE.cmd')
-if ($startHere.IndexOf('call "%~dp0PUBLISH_WINDOWS.cmd"', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
-    throw 'START_HERE.cmd must rebuild the current source package before launch.'
-}
-if (Test-Path -LiteralPath (Join-Path $root 'INSTALL_RUNTIME_WINDOWS.cmd')) {
-    throw 'A game-bin runtime installer script was found.'
-}
-
-
-$buildProps = Read-Utf8Text -Path (Join-Path $root 'Directory.Build.props')
-foreach ($token in @('<TreatWarningsAsErrors>true</TreatWarningsAsErrors>', '<EnableWindowsTargeting>true</EnableWindowsTargeting>', '<ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>')) {
-    if ($buildProps.IndexOf($token, [System.StringComparison]::Ordinal) -lt 0) {
-        throw "Build quality requirement is missing: $token"
-    }
-}
-
-$scannerText = Read-Utf8Text -Path (Join-Path $root 'src\PowerScalerLabs.Runtime\ObjectCapabilityScanner.cs')
-if ($scannerText.IndexOf('new(timestamp, monotonicTicks, kind, -1, 0, 0, 0, 0, 0, label, null);', [System.StringComparison]::Ordinal) -lt 0) {
-    throw 'Schema-7 scanner-control events must explicitly supply a null FighterIdentityKey.'
-}
-
-$companionManagerText = Read-Utf8Text -Path (Join-Path $root 'src\PowerScalerLabs.App\Companions\HealthScaleCompanionManager.cs')
-if ($companionManagerText.IndexOf('using System.IO;', [System.StringComparison]::Ordinal) -lt 0) {
-    throw 'HealthScaleCompanionManager.cs must explicitly import System.IO.'
-}
-
-$observerText = Read-Utf8Text -Path (Join-Path $root 'src\PowerScalerLabs.Runtime\ExternalCapabilityObserver.cs')
-if ([regex]::Matches($observerText, '(?m)^\s*ScannerFrame\s+scannerFrame\s*=').Count -gt 0) {
-    throw 'Ambiguous scannerFrame local declarations remain in ExternalCapabilityObserver.cs.'
-}
-
-$sessionRecorderText = Read-Utf8Text -Path (Join-Path $root 'src\PowerScalerLabs.App\Recording\SessionRecorder.cs')
-foreach ($token in @('WriterBufferSize', 'FileOptions.SequentialScan', 'FlushInterval', 'MetadataInterval', 'HashSet<string>', 'candidate-keys.jsonl', 'candidate-index.json', 'timeline.jsonl', 'chronology-samples.jsonl', 'chronology-watchlist.json', 'raw-memory-observations.jsonl', 'runtime-access-architecture.json', 'SchemaVersion = 7', 'ReceiptLatencyMilliseconds', 'ChronologyOutOfOrderCount', 'ChronologySequenceGapCount', 'MonotonicFrequency', 'StartMonotonicTicks', 'scanner-change', 'chronology-change', 'DistinctCandidateCount', 'AutoFlush = false')) {
-    if ($sessionRecorderText.IndexOf($token, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
-        throw "Recording optimization requirement is missing: $token"
-    }
-}
-
-$candidateStoreText = Read-Utf8Text -Path (Join-Path $root 'src\PowerScalerLabs.App\Recording\CandidateStore.cs')
-foreach ($token in @('_orderedSnapshot', '_groupSnapshot', 'TimeSpan.FromSeconds(20)', 'TimeSpan.FromSeconds(60)', 'FinalizeTouched', 'ApplySlotEvidence', 'ByRole', 'ByStatus', 'ByTier', 'ByValidation', 'physical-groups.json', 'unresolved-index.json')) {
-    if ($candidateStoreText.IndexOf($token, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
-        throw "Candidate organization/optimization requirement is missing: $token"
-    }
-}
-
-$appResources = Read-Utf8Text -Path (Join-Path $root 'src\PowerScalerLabs.App\App.xaml')
-foreach ($token in @('EnableRowVirtualization', 'EnableColumnVirtualization', 'VirtualizationMode')) {
-    if ($appResources.IndexOf($token, [System.StringComparison]::Ordinal) -lt 0) {
-        throw "WPF virtualization requirement is missing: $token"
-    }
-}
-
-Write-Host 'PowerScaler Labs Runtime Access Architecture Gate 0 structural checks passed.' -ForegroundColor Green
-Write-Host 'Runtime boundary: external query + VM-read only; no injection, game-memory writes, or hooks.'
-Write-Host 'Scanner: configurable root ranges, typed decoding, labeled baselines/comparisons, continuous deltas, and bounded pointer-child discovery.'
-Write-Host 'Recording: compact frames, raw memory facts, address provenance, scanner evidence, focused chronology, access budgets, candidates, and findings.'
-Write-Host 'Classification: one physical-offset group per row, preferred typed interpretation, structured resource pairs, validation stages, and ByTier/ByValidation exports.'
-Write-Host 'HealthScale boundary: sealed companion source; explicit desktop install/verify/uninstall only; no runtime coupling.'
+Write-Host 'PowerScaler Labs Native Causal Probe Foundation verification passed.'
+Write-Host 'App: Fighters / Research / Findings / Diagnostics / Tools; legacy scanner-recording-candidate UI removed.'
+Write-Host 'Runtime: external read-only foundation retained, including fighter generations, targeted scanner primitive, chronology, provenance, and read budgets.'
+Write-Host 'Probe: isolated explicit-attach host, ABI 1 shared memory, heartbeats, and clean-detach foundation; no instrumentation.'

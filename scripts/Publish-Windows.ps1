@@ -8,6 +8,9 @@ $root = Split-Path -Parent $PSScriptRoot
 $logs = Join-Path $root 'logs'
 $artifacts = Join-Path $root 'artifacts\PowerScalerLabs'
 $runtimeArtifacts = Join-Path $artifacts 'Runtime'
+$probeArtifacts = Join-Path $artifacts 'Probe'
+$nativeProbeProject = Join-Path $root 'src\native\PowerScalerLabs.NativeProbe\PowerScalerLabs.NativeProbe.vcxproj'
+$nativeProbeBuild = Join-Path $root 'src\native\PowerScalerLabs.NativeProbe\bin\Release\PowerScalerLabs.NativeProbe.dll'
 $healthScaleCompanionRoot = Join-Path $root 'companions\HealthScale'
 $healthScaleSourceRoot = Join-Path $healthScaleCompanionRoot 'Source'
 $healthScaleSolution = Join-Path $healthScaleSourceRoot 'HealthScale.sln'
@@ -83,8 +86,25 @@ function Copy-CompanionDocument {
     Copy-Item -LiteralPath $Source -Destination (Join-Path $healthScaleArtifacts $DestinationName) -Force
 }
 
+function Assert-X64Pe {
+    param([Parameter(Mandatory)][string]$Path)
+    $stream = [System.IO.File]::OpenRead($Path)
+    $reader = New-Object System.IO.BinaryReader $stream
+    try {
+        $stream.Position = 0x3c
+        $peOffset = $reader.ReadInt32()
+        $stream.Position = $peOffset
+        if ($reader.ReadUInt32() -ne 0x00004550) { throw "Invalid PE signature: $Path" }
+        if ($reader.ReadUInt16() -ne 0x8664) { throw "Native probe is not x64: $Path" }
+    }
+    finally {
+        $reader.Dispose()
+        $stream.Dispose()
+    }
+}
+
 try {
-    Write-Log 'PowerScaler Labs Runtime Access Architecture Gate 0 Build Hotfix 1 publish started.'
+    Write-Log 'PowerScaler Labs Native Causal Probe Foundation publish started.'
     $dotnetCommand = Get-Command dotnet -ErrorAction Stop
     $script:DotNetExe = $dotnetCommand.Source
     $script:MSBuildExe = Find-MSBuild
@@ -110,20 +130,7 @@ try {
         throw 'dotnet --version failed.'
     }
 
-    & (Join-Path $PSScriptRoot 'Deep-Audit-DeclutterChronology.ps1') 2>&1 | ForEach-Object {
-        $text = $_.ToString()
-        Write-Host $text
-        Add-Content -LiteralPath $logPath -Value $text -Encoding UTF8
-    }
-
-    & (Join-Path $PSScriptRoot 'Deep-Audit-ChronologicalTelemetry.ps1') 2>&1 | ForEach-Object {
-        $text = $_.ToString()
-        Write-Host $text
-        Add-Content -LiteralPath $logPath -Value $text -Encoding UTF8
-    }
-
-
-    & (Join-Path $PSScriptRoot 'Deep-Audit-RuntimeAccessArchitecture.ps1') 2>&1 | ForEach-Object {
+    & (Join-Path $PSScriptRoot 'Verify-PowerScalerLabs.ps1') 2>&1 | ForEach-Object {
         $text = $_.ToString()
         Write-Host $text
         Add-Content -LiteralPath $logPath -Value $text -Encoding UTF8
@@ -143,12 +150,22 @@ try {
         Remove-Item -LiteralPath $artifacts -Recurse -Force
     }
     New-Item -ItemType Directory -Path $runtimeArtifacts -Force | Out-Null
+    New-Item -ItemType Directory -Path $probeArtifacts -Force | Out-Null
     New-Item -ItemType Directory -Path $healthScalePayloadArtifacts -Force | Out-Null
 
-    Invoke-DotNet -Arguments @('restore', (Join-Path $root 'PowerScalerLabs.sln'), '--nologo')
-    Invoke-DotNet -Arguments @('build', (Join-Path $root 'PowerScalerLabs.sln'), '-c', 'Release', '--no-restore', '--nologo', '--disable-build-servers', '-p:UseSharedCompilation=false')
+    foreach ($project in @(
+        'src\PowerScalerLabs.Protocol\PowerScalerLabs.Protocol.csproj',
+        'src\PowerScalerLabs.Runtime\PowerScalerLabs.Runtime.csproj',
+        'src\PowerScalerLabs.ProbeHost\PowerScalerLabs.ProbeHost.csproj',
+        'src\PowerScalerLabs.App\PowerScalerLabs.App.csproj'
+    )) {
+        Invoke-DotNet -Arguments @('restore', (Join-Path $root $project), '--nologo')
+        Invoke-DotNet -Arguments @('build', (Join-Path $root $project), '-c', 'Release', '--no-restore', '--nologo', '--disable-build-servers', '-p:UseSharedCompilation=false')
+    }
     Invoke-DotNet -Arguments @('run', '--project', (Join-Path $root 'src\PowerScalerLabs.Runtime\PowerScalerLabs.Runtime.csproj'), '-c', 'Release', '--no-build', '--', '--architecture-self-test')
+    Invoke-DotNet -Arguments @('run', '--project', (Join-Path $root 'src\PowerScalerLabs.ProbeHost\PowerScalerLabs.ProbeHost.csproj'), '-c', 'Release', '--no-build', '--', '--architecture-self-test')
 
+    Invoke-MSBuild -Arguments @($nativeProbeProject, '/m', '/p:Configuration=Release', '/p:Platform=x64', '/nologo')
     Invoke-MSBuild -Arguments @($healthScaleSolution, '/m', '/p:Configuration=Release', '/p:Platform=x64', '/nologo')
 
     Invoke-DotNet -Arguments @(
@@ -156,6 +173,13 @@ try {
         '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '--no-restore', '--nologo',
         '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true',
         '-p:PublishReadyToRun=false', '-p:PublishTrimmed=false', '--disable-build-servers', '-p:UseSharedCompilation=false', '-o', $runtimeArtifacts
+    )
+
+    Invoke-DotNet -Arguments @(
+        'publish', (Join-Path $root 'src\PowerScalerLabs.ProbeHost\PowerScalerLabs.ProbeHost.csproj'),
+        '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '--no-restore', '--nologo',
+        '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true',
+        '-p:PublishReadyToRun=false', '-p:PublishTrimmed=false', '--disable-build-servers', '-p:UseSharedCompilation=false', '-o', $probeArtifacts
     )
 
     Invoke-DotNet -Arguments @(
@@ -167,6 +191,8 @@ try {
 
     $appExe = Join-Path $artifacts 'PowerScalerLabs.exe'
     $runtimeExe = Join-Path $runtimeArtifacts 'PowerScalerLabs.Runtime.exe'
+    $probeHostExe = Join-Path $probeArtifacts 'PowerScalerLabs.ProbeHost.exe'
+    $probeDll = Join-Path $probeArtifacts 'PowerScalerLabs.NativeProbe.dll'
     $healthScaleDll = Join-Path $healthScaleSourceRoot 'src\native\HealthScale.Runtime\bin\Release\xinput_other.dll'
     $healthScaleIni = Join-Path $healthScaleSourceRoot 'src\native\HealthScale.Runtime\HealthScale.ini'
     if (-not (Test-Path -LiteralPath $appExe -PathType Leaf)) {
@@ -175,6 +201,14 @@ try {
     if (-not (Test-Path -LiteralPath $runtimeExe -PathType Leaf)) {
         throw "Published runtime is missing: $runtimeExe"
     }
+    if (-not (Test-Path -LiteralPath $probeHostExe -PathType Leaf)) {
+        throw "Published ProbeHost is missing: $probeHostExe"
+    }
+    if (-not (Test-Path -LiteralPath $nativeProbeBuild -PathType Leaf)) {
+        throw "Built native probe DLL is missing: $nativeProbeBuild"
+    }
+    Copy-Item -LiteralPath $nativeProbeBuild -Destination $probeDll -Force
+    Assert-X64Pe -Path $probeDll
     if (-not (Test-Path -LiteralPath $healthScaleDll -PathType Leaf)) {
         throw "Built HealthScale companion DLL is missing: $healthScaleDll"
     }
@@ -195,6 +229,8 @@ try {
 
     $appHash = (Get-FileHash -LiteralPath $appExe -Algorithm SHA256).Hash.ToLowerInvariant()
     $runtimeHash = (Get-FileHash -LiteralPath $runtimeExe -Algorithm SHA256).Hash.ToLowerInvariant()
+    $probeHostHash = (Get-FileHash -LiteralPath $probeHostExe -Algorithm SHA256).Hash.ToLowerInvariant()
+    $probeDllHash = (Get-FileHash -LiteralPath $probeDll -Algorithm SHA256).Hash.ToLowerInvariant()
     $healthScalePayloadDll = Join-Path $healthScalePayloadArtifacts 'xinput_other.dll'
     $healthScalePayloadIni = Join-Path $healthScalePayloadArtifacts 'HealthScale.ini'
     $healthScaleDllHash = (Get-FileHash -LiteralPath $healthScalePayloadDll -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -206,18 +242,22 @@ try {
 
     $sourceBuildId = (Get-Content -LiteralPath (Join-Path $root 'BUILD_ID.txt') -Raw).Trim()
     @(
-        'PowerScaler Labs - Runtime Access Architecture Gate 0 Build Hotfix 1 + HealthScale Companion 1',
+        'PowerScaler Labs - Native Causal Probe Foundation + HealthScale Companion 1',
         "Build ID: $sourceBuildId",
         "Published: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
         "PowerScalerLabs.exe SHA-256: $appHash",
         "PowerScalerLabs.Runtime.exe SHA-256: $runtimeHash",
+        "PowerScalerLabs.ProbeHost.exe SHA-256: $probeHostHash",
+        "PowerScalerLabs.NativeProbe.dll SHA-256: $probeDllHash",
         "HealthScale 1.1.1 xinput_other.dll SHA-256: $healthScaleDllHash",
-        'Runtime boundary: provider-based external read-only access, factual raw observations, identity generations, and measured chronology; no game-memory writes, hooks, or injection.',
+        'Runtime boundary: provider-based external read-only access, fighter generations, provenance, and supporting chronology; no game-memory writes, hooks, or injection.',
+        'Probe boundary: explicit attachment only; native ABI and heartbeat infrastructure are present; gameplay instrumentation and writes are inactive.',
         'Companion boundary: HealthScale is independently built from frozen source and installed only through explicit fail-closed desktop-app actions.'
     ) | Set-Content -LiteralPath (Join-Path $artifacts 'BUILD_INFO.txt') -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $artifacts 'BUILD_ID.txt') -Value $sourceBuildId -Encoding UTF8
 
     Write-Log "Publish completed: $appExe"
+    Write-Log "Probe foundation staged: $probeHostExe and $probeDll"
     Write-Log "HealthScale companion payload staged: $healthScalePayloadDll"
     exit 0
 }

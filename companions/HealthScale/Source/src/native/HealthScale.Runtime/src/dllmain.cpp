@@ -29,12 +29,7 @@ DWORD WINAPI RuntimeThread(void*) {
         return 0;
     }
 
-    if (version != L"1.25.2.0" && version != L"1.25.02.0") {
-        hs::Log(L"WARNING: Expected game version 1.25.02.0. No executable hook or fighter memory access will occur.");
-        return 0;
-    }
-
-    hs::Log(L"Version check passed.");
+    hs::Log(L"No executable-version gate is applied. Runtime activation depends on live signature and structural validation.");
     if (!hs::InitializeNativeHudHealthNormalizer(gLoaderModule)) {
         hs::Log(L"Native health normalization did not activate. Review HealthScale.Runtime.log.");
     }

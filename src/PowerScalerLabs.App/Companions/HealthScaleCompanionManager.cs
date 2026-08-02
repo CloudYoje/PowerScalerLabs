@@ -221,14 +221,6 @@ public sealed class HealthScaleCompanionManager
         {
             throw new InvalidOperationException("The HealthScale payload is unavailable. Publish the Windows package with Visual C++ first.");
         }
-        string gameVersion = FileVersionInfo.GetVersionInfo(Path.Combine(status.GameBinPath, "DBXV2.exe")).FileVersion ?? string.Empty;
-        if (!IsSupportedGameVersion(gameVersion))
-        {
-            throw new InvalidOperationException(
-                string.IsNullOrWhiteSpace(gameVersion)
-                    ? "DBXV2.exe has no readable file version. HealthScale 1.1.1 supports DBXV2 1.25.2.0, so installation is blocked."
-                    : $"DBXV2 {gameVersion} is not the supported 1.25.2.0 build. HealthScale installation is blocked.");
-        }
         if (status.State == HealthScaleCompanionState.Conflict)
         {
             throw new InvalidOperationException("An unknown xinput_other.dll is already installed. It was not overwritten.");
@@ -438,9 +430,6 @@ public sealed class HealthScaleCompanionManager
         return null;
     }
 
-
-    private static bool IsSupportedGameVersion(string versionText) =>
-        Version.TryParse(versionText, out Version? version) && version == new Version(1, 25, 2, 0);
 
     private static bool IsGameRunning()
     {

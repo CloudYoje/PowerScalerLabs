@@ -52,23 +52,6 @@ internal sealed class ExternalCapabilityObserver : IDisposable
                 _moduleRefreshCountdown = 10;
             }
 
-            if (!IsSupportedGameVersion(_reader.GameVersion))
-            {
-                ResetCore(events, now, monotonicTicks);
-                _activeLocatorId = null;
-                _locatorDetail = $"DBXV2.exe version '{_reader.GameVersion ?? "unknown"}' is outside the approved 1.25.2.0 address domain.";
-                _locatorReports = [];
-                ScannerFrame unsupportedGameFrame = _scanner.Process(_reader, [], commands, now, monotonicTicks, events);
-                return WaitingFrame(
-                    RuntimeState.UnsupportedGameBuild,
-                    _locatorDetail,
-                    false,
-                    0,
-                    events,
-                    rawObservations,
-                    unsupportedGameFrame);
-            }
-
             BattleCoreResolution resolution = ResolveBattleCore(_reader);
             _locatorReports = resolution.Reports;
             _locatorDetail = resolution.Detail;
@@ -82,11 +65,9 @@ internal sealed class ExternalCapabilityObserver : IDisposable
                 ResetCore(events, now, monotonicTicks);
                 _activeLocatorId = null;
                 ScannerFrame battleCoreScannerFrame = _scanner.Process(_reader, [], commands, now, monotonicTicks, events);
-                RuntimeState waitingState = patcherReport?.Outcome == LocatorOutcome.Unsupported
-                    ? RuntimeState.UnsupportedPatcher
-                    : patcherReport?.Outcome == LocatorOutcome.Unavailable
-                        ? RuntimeState.WaitingForPatcher
-                        : RuntimeState.WaitingForBattleCore;
+                RuntimeState waitingState = patcherReport?.Outcome == LocatorOutcome.Unavailable
+                    ? RuntimeState.WaitingForPatcher
+                    : RuntimeState.WaitingForBattleCore;
                 return WaitingFrame(
                     waitingState,
                     resolution.Detail,
@@ -523,9 +504,6 @@ internal sealed class ExternalCapabilityObserver : IDisposable
             _locatorDetail,
             _locatorReports,
             _reader?.SnapshotMetrics("observer") ?? EmptyMetrics("observer"));
-
-    private static bool IsSupportedGameVersion(string? versionText) =>
-        string.Equals(versionText, ValidatedRuntimeLayout.SupportedGameVersion, StringComparison.Ordinal);
 
     private static TelemetryEventMessage FighterEvent(
         TelemetryEventKind kind,

@@ -4,9 +4,9 @@ namespace PowerScalerLabs.Runtime;
 
 internal static class AddressProvenanceCatalog
 {
-    internal const string PatcherProviderId = "xv2-patcher-1.25.2-layout";
+    internal const string PatcherProviderId = "xv2-patcher-structural-layout";
     internal const string DirectProviderId = "dbxv2-direct-signature-research";
-    internal const string FighterLayoutProviderId = "dbxv2-battle-mob-layout-1.25.2";
+    internal const string FighterLayoutProviderId = "dbxv2-battle-mob-structural-layout";
     internal const string BattleCoreStorageKey = "xv2patcher.battle-core-storage";
     internal const string BattleCoreMobArrayKey = "battle-core.mob-array";
     internal const string FighterVtableKey = "battle-mob.vtable";
@@ -30,7 +30,7 @@ internal static class AddressProvenanceCatalog
             8,
             "Validated XV2 Patcher route used to obtain BattleCore candidates.",
             "Historical Chronological Telemetry Gate 1 source-grounded layout.",
-            ValidatedRuntimeLayout.SupportedGameVersion,
+            "No hard version gate; every address must pass live structural validation.",
             PatcherProviderId,
             "Code-anchored",
             "Observer heartbeat after module validation",
@@ -46,7 +46,7 @@ internal static class AddressProvenanceCatalog
             8,
             "Beginning of the 14-slot Battle_Mob pointer array.",
             "Validated structural observation from the historical runtime branch.",
-            ValidatedRuntimeLayout.SupportedGameVersion,
+            "No hard version gate; every address must pass live structural validation.",
             FighterLayoutProviderId,
             "Code-anchored",
             "Observer heartbeat",
@@ -62,7 +62,7 @@ internal static class AddressProvenanceCatalog
             8,
             "Battle_Mob vtable pointer used as structural type evidence.",
             "Validated structural observation from the historical runtime branch.",
-            ValidatedRuntimeLayout.SupportedGameVersion,
+            "No hard version gate; every address must pass live structural validation.",
             FighterLayoutProviderId,
             "Code-anchored",
             "Fighter acquisition and validation",
@@ -97,7 +97,7 @@ internal static class AddressProvenanceCatalog
         4,
         meaning,
         "Historical focused watchlist; semantics remain bounded by the stated validation stage.",
-        ValidatedRuntimeLayout.SupportedGameVersion,
+        "No hard version gate; every address must pass live structural validation.",
         FighterLayoutProviderId,
         stage,
         "25 ms chronology lane plus observer heartbeat for verified health fields",

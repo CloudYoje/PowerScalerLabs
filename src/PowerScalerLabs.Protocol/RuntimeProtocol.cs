@@ -8,7 +8,7 @@ namespace PowerScalerLabs.Protocol;
 public static class RuntimeProtocol
 {
     public const string PipeName = "PowerScalerLabs.Runtime.CapabilityScannerGate";
-    public const int ProtocolVersion = 7;
+    public const int ProtocolVersion = 8;
     public const int ObservedFighterSlotCount = 14;
     public const uint CurrentHealthOffset = 0x100;
     public const uint MaximumHealthOffset = 0x104;
@@ -40,8 +40,6 @@ public enum RuntimeState
     GameDetected,
     ReadPermissionGranted,
     WaitingForPatcher,
-    UnsupportedGameBuild,
-    UnsupportedPatcher,
     WaitingForBattleCore,
     WaitingForFighters,
     ObservingFighters,
@@ -319,7 +317,7 @@ public sealed record AddressProvenanceEntry(
     int ByteCount,
     string Meaning,
     string Source,
-    string SupportedGameVersion,
+    string CompatibilityPolicy,
     string ProviderId,
     string ValidationStage,
     string ReadCadence,
