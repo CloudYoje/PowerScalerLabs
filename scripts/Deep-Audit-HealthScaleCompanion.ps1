@@ -86,7 +86,6 @@ foreach ($token in @(
     'ReceiptMatches',
     'CopyFileAtomic',
     'IsGameRunning',
-    'new Version(1, 25, 2, 0)',
     'InstallOrAdopt',
     'Uninstall',
     'The installed DLL no longer matches the managed receipt',
@@ -107,12 +106,13 @@ foreach ($token in @('WriteProcessMemory', 'ReadProcessMemory', 'VirtualAllocEx'
 
 $xaml = Read-StrictUtf8 'src\PowerScalerLabs.App\MainWindow.xaml'
 foreach ($token in @(
-    'Companion Apps',
-    'HealthScale 1.1.1',
+    'Content="Tools"',
+    'HealthScale 1.1.1 companion',
     'Install / Adopt',
-    'Uninstall Managed Copy',
-    'Boundary guarantees',
-    'PowerScaler Labs never overwrites an unknown xinput_other.dll'
+    'Content="Uninstall"',
+    'Payload SHA-256:',
+    'Installed SHA-256:',
+    'Companion Files'
 )) {
     if ($xaml.IndexOf($token, [System.StringComparison]::Ordinal) -lt 0) {
         throw "HealthScale companion UI invariant is missing: $token"
@@ -145,8 +145,25 @@ if (-not $layoutProbePayload.EndsWith($expectedPayloadSuffix, [System.StringComp
     throw 'HealthScale companion publish layout composition is invalid.'
 }
 
+$companionManager = Read-StrictUtf8 'src\PowerScalerLabs.App\Companions\HealthScaleCompanionManager.cs'
+$nativeLoader = Read-StrictUtf8 'companions\HealthScale\Source\src\native\HealthScale.Runtime\src\dllmain.cpp'
+$nativeRuntime = Read-StrictUtf8 'companions\HealthScale\Source\src\native\HealthScale.Runtime\src\health_overhaul_runtime.cpp'
+$versionGateSources = @($companionManager, $nativeLoader, $nativeRuntime)
+foreach ($token in @('IsSupportedGameVersion', 'HealthScale installation is blocked', 'Expected game version', 'kExpectedPatcherImageSize', 'expects XV2 Patcher', 'new Version(1, 25, 2, 0)', '1.25.2.0')) {
+    foreach ($sourceText in $versionGateSources) {
+        if ($sourceText.IndexOf($token, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            throw "Retired HealthScale version gate returned: $token"
+        }
+    }
+}
+if ($manifestObject.PSObject.Properties.Name -contains 'supportedGameVersion' -or
+    $manifestObject.PSObject.Properties.Name -contains 'supportedPatcherVersion') {
+    throw 'HealthScale companion manifest must not declare hard supported-version dependencies.'
+}
+
 Write-Host 'Deep audit passed: uploaded HealthScale 1.1.1 source matches its frozen upstream SHA-256 manifest.' -ForegroundColor Green
 Write-Host 'Deep audit passed: HealthScale remains an independent Visual C++ solution and is not linked into PowerScaler assemblies.' -ForegroundColor Green
 Write-Host 'Deep audit passed: the external PowerScaler runtime has no HealthScale file-management or process-access path.' -ForegroundColor Green
 Write-Host 'Deep audit passed: desktop companion management refuses unknown DLL replacement and requires a matching receipt for removal.' -ForegroundColor Green
 Write-Host 'Deep audit passed: DBXV2-running lockout, SHA-256 verification, atomic copies, and modified-INI preservation are present.' -ForegroundColor Green
+Write-Host 'Deep audit passed: HealthScale has no executable-version or patcher-image-size hard gate.' -ForegroundColor Green

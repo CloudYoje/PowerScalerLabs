@@ -11,7 +11,7 @@ internal static class RuntimeArchitectureSelfTest
     {
         try
         {
-            Require(RuntimeProtocol.ProtocolVersion == 7, "Protocol version must be 7.");
+            Require(RuntimeProtocol.ProtocolVersion == 8, "Protocol version must be 8.");
             Require(TelemetryComparisonPolicy.Changed(10.0f, 9.99f),
                 "Compressed-scale policy must detect a 0.01 health change.");
             Require(TelemetryComparisonPolicy.NumericEquivalent(10.0, 10.0000001),
@@ -21,6 +21,9 @@ internal static class RuntimeArchitectureSelfTest
             Require(provenance.Count >= 8, "Address provenance registry is incomplete.");
             Require(provenance.Select(entry => entry.Key).Distinct(StringComparer.Ordinal).Count() == provenance.Count,
                 "Address provenance keys must be unique.");
+            Require(provenance.All(entry =>
+                    entry.CompatibilityPolicy.Contains("No hard version gate", StringComparison.Ordinal)),
+                "Every address provenance entry must declare the version-independent structural-validation policy.");
             foreach (uint offset in new[]
             {
                 RuntimeProtocol.CurrentHealthOffset,
@@ -71,7 +74,7 @@ internal static class RuntimeArchitectureSelfTest
 
             output.WriteLine("Runtime Access Architecture Gate 0 self-test passed.");
             output.WriteLine("- compressed 0.01 changes are observable");
-            output.WriteLine("- address provenance registry is complete and unique");
+            output.WriteLine("- address provenance registry is complete, unique, and version-gate free");
             output.WriteLine("- native imports remain query/read/module-enumeration only");
             output.WriteLine("- fighter generation identity survives protocol serialization");
             return 0;

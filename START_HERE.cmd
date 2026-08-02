@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 set "APP=%~dp0artifacts\PowerScalerLabs\PowerScalerLabs.exe"
 
-echo Building PowerScaler Labs and the sealed HealthScale 1.1.1 companion from this source package...
+echo Building the cleaned PowerScaler Labs research app and sealed HealthScale 1.1.1 companion...
 call "%~dp0PUBLISH_WINDOWS.cmd"
 if errorlevel 1 (
   echo.

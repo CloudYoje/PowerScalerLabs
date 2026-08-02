@@ -104,7 +104,7 @@ internal sealed class Xv2PatcherBattleCoreLocator : IBattleCoreLocator
 {
 
     public string ProviderId => AddressProvenanceCatalog.PatcherProviderId;
-    public string DisplayName => "Validated XV2 Patcher 1.25.2 layout";
+    public string DisplayName => "Structurally validated XV2 Patcher route";
 
     public BattleCoreLocatorResult Locate(GameMemoryReader reader)
     {
@@ -115,19 +115,12 @@ internal sealed class Xv2PatcherBattleCoreLocator : IBattleCoreLocator
                 "XV2 Patcher module xinput1_3.dll is not loaded.", 0, 0, null, -1, 0);
         }
 
-        if (patcher.ImageSize != ValidatedRuntimeLayout.ExpectedPatcherImageSize)
-        {
-            return Result(LocatorOutcome.Unsupported,
-                $"xinput1_3.dll image size is 0x{patcher.ImageSize:X}; expected 0x{ValidatedRuntimeLayout.ExpectedPatcherImageSize:X}.",
-                ValidatedRuntimeLayout.ExpectedPatcherImageSize, patcher.ImageSize, null, -1, 0);
-        }
-
         if (!reader.TryReadUInt64(patcher.BaseAddress + ValidatedRuntimeLayout.PatcherBattleCoreStorageRva, out ulong storageAddress) ||
             storageAddress == 0)
         {
             return Result(LocatorOutcome.NoCandidate,
                 "The validated patcher storage RVA was readable but did not yield a nonzero root.",
-                ValidatedRuntimeLayout.ExpectedPatcherImageSize, patcher.ImageSize, null, -1, 0);
+                0, patcher.ImageSize, null, -1, 0);
         }
 
         reader.TryReadUInt64(storageAddress, out ulong firstPointer);
@@ -154,12 +147,12 @@ internal sealed class Xv2PatcherBattleCoreLocator : IBattleCoreLocator
         {
             return Result(LocatorOutcome.NoCandidate,
                 "The patcher root produced no structurally valid BattleCore candidate.",
-                ValidatedRuntimeLayout.ExpectedPatcherImageSize, patcher.ImageSize, null, -1, 0);
+                0, patcher.ImageSize, null, -1, 0);
         }
 
         return Result(LocatorOutcome.Resolved,
             $"Structurally validated BattleCore candidate 0x{selected.Core:X16}.",
-            ValidatedRuntimeLayout.ExpectedPatcherImageSize, patcher.ImageSize, selected.Core, selected.Score, selected.Core);
+            0, patcher.ImageSize, selected.Core, selected.Score, selected.Core);
     }
 
     private BattleCoreLocatorResult Result(

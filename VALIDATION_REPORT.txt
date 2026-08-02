@@ -1,23 +1,23 @@
-PowerScaler Labs — Runtime Access Architecture Gate 0 Build Hotfix 1 + HealthScale Companion 1
+PowerScaler Labs — Causal Research Cleanup
 
-SOURCE VALIDATION COMPLETED
-- Scanner-control TelemetryEventMessage construction now supplies the schema-7 FighterIdentityKey as explicit null.
-- HealthScaleCompanionManager explicitly imports System.IO for its file-system types.
-- HealthScale companion publish audit validates the composed Companions\HealthScale\Payload route through the publisher variables and copy/hash staging commands.
-- Publish verifier checks the centralized SupportedGameVersion invariant instead of the retired ExpectedGameVersion token.
-- Protocol schema 7 defines runtime-access status, provider reports, address provenance, raw observations, read budgets, comparison policy, and fighter generations.
-- ExternalCapabilityObserver no longer owns the patcher-specific BattleCore route.
-- Historical XV2 Patcher resolution is isolated behind IBattleCoreLocator.
-- Provider conflict behavior is fail-closed.
-- Direct DBXV2 signature discovery remains disabled pending separate research.
-- The compressed-scale comparison policy recognizes 0.01 changes.
-- Chronology continues exact raw-bit comparison.
-- Session schema 7 persists raw memory facts and a runtime-access architecture snapshot.
-- HealthScale 1.1.1 remains independently sourced, built, installed, verified, and removed.
+Packaging-environment validation completed:
+- rebuilt MainWindow XAML parses successfully;
+- App.xaml and app project XML parse successfully;
+- every XAML event handler resolves to a code-behind method name;
+- retired compiled app directories Overlay/ and Recording/ are absent;
+- no SessionRecorder, CandidateStore, CandidateGroupBuilder, ExperimentOverlayWindow, or GlobalHotKey references remain in compiled app source;
+- legacy scanner/recording workflow controls are absent from MainWindow.xaml;
+- fighter registry, chronology, runtime provenance/read-budget reporting, and HealthScale manager remain present;
+- Publish-Windows.ps1 now uses the cleanup verifier instead of obsolete scanner/recording deep audits.
 
-PRE-GAME WINDOWS VALIDATION REQUIRED
-- Run TEST_RUNTIME_ACCESS_ARCHITECTURE.cmd.
-- Run PUBLISH_WINDOWS.cmd with .NET SDK 8.0.403 and the Visual C++ desktop toolchain.
-- Complete RUNTIME_ACCESS_ARCHITECTURE_GATE0_TEST.md before adding hooks, writes, causal probes, or scaling.
+Not validated in this packaging environment:
+- .NET Release compilation (SDK unavailable here);
+- WPF launch on Windows;
+- live DBXV2 attachment.
 
-No Windows compilation or live DBXV2 success is claimed from this packaging environment.
+Required next validation:
+Run START_HERE.cmd on the Windows development machine. The build must pass before the native causal probe gate begins.
+Publish Hotfix 1:
+- Corrected contradictory HealthScale deep-audit invariant that required retired DBXV2 version literal 1.25.2.0.
+- Updated companion UI audit to validate the compact Tools page rather than the retired Companion Apps page.
+- Frozen HealthScale 1.1.1 source remains byte-for-byte governed by UPSTREAM_SOURCE_SHA256SUMS.txt.

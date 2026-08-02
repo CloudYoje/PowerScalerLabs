@@ -12,7 +12,7 @@
 
 1. Start PowerScaler Labs.
 2. Start its runtime.
-3. Launch DBXV2 1.25.2.0 with the validated XV2 Patcher layout.
+3. Launch the installed DBXV2 build with XV2 Patcher loaded; record both detected versions for the test log.
 4. Stay outside battle for at least one minute.
 5. Confirm the provider report transitions from module detection to waiting for BattleCore without errors.
 6. Record observer/chronology read calls, bytes, failures, and queries.
@@ -61,6 +61,7 @@ No hard pass threshold is claimed in source. Review measured rates and frame-tim
 Stop the test and preserve logs if:
 
 - providers disagree;
+- the current build fails signature or structural validation;
 - BattleCore changes repeatedly without a scene transition;
 - identity generations fail to change after release/reacquire;
 - read failures climb continuously while objects are stable;

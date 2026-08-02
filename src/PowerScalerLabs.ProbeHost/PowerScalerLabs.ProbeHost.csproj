@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <AssemblyName>PowerScalerLabs.ProbeHost</AssemblyName>
+    <RootNamespace>PowerScalerLabs.ProbeHost</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PowerScalerLabs.Protocol\PowerScalerLabs.Protocol.csproj" />
+  </ItemGroup>
+</Project>

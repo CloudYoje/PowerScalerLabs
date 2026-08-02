@@ -18,11 +18,10 @@
 namespace {
 std::atomic<bool> gHealthRuntimeRunning{false};
 std::atomic<bool> gHealthWritesEnabled{false};
-// Verified against the user's XV2 Patcher 4.64 xinput1_3.dll.
+// Source-grounded XV2 Patcher storage route; live structural validation is authoritative.
 constexpr std::uintptr_t kPatcherBattleCoreStorageRva = 0x2080C8;
-constexpr DWORD kExpectedPatcherImageSize = 0x394000;
 
-// Verified in the user's DBXV2 1.25.02.0 / XV2 Patcher 4.64 setup.
+// Source-grounded Battle_Mob layout; every candidate is validated before use.
 constexpr std::size_t kMobArrayOffset = 0x3A58;
 constexpr std::size_t kCurrentHpOffset = 0x100;
 constexpr std::size_t kMaximumHpOffset = 0x104;
@@ -1124,11 +1123,7 @@ DWORD RunHealthOverhaulRuntime() {
     const DWORD patcherImageSize = ReadImageSize(patcher);
     Log(L"XV2 Patcher base: 0x%p; image size: 0x%08lX",
         patcher, patcherImageSize);
-    if (patcherImageSize != kExpectedPatcherImageSize) {
-        Log(L"ERROR: HealthScale Overhaul expects XV2 Patcher 4.64 image size 0x%08lX. "
-            L"Health writes are disabled.", kExpectedPatcherImageSize);
-        return 2;
-    }
+    Log(L"No patcher image-size gate is applied; the BattleCore candidate must pass live structural validation.");
 
     const Settings settings = LoadSettings();
     const bool writesEnabled = settings.writeHealth;
