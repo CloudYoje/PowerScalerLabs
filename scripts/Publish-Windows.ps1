@@ -11,6 +11,8 @@ $runtimeArtifacts = Join-Path $artifacts 'Runtime'
 $probeArtifacts = Join-Path $artifacts 'Probe'
 $nativeProbeProject = Join-Path $root 'src\native\PowerScalerLabs.NativeProbe\PowerScalerLabs.NativeProbe.vcxproj'
 $nativeProbeBuild = Join-Path $root 'src\native\PowerScalerLabs.NativeProbe\bin\Release\PowerScalerLabs.NativeProbe.dll'
+$nativeTransportTestsProject = Join-Path $root 'tests\native\PowerScalerLabs.NativeTransportTests.vcxproj'
+$nativeTransportTestsExe = Join-Path $root 'tests\native\bin\Release\PowerScalerLabs.NativeTransportTests.exe'
 $healthScaleCompanionRoot = Join-Path $root 'companions\HealthScale'
 $healthScaleSourceRoot = Join-Path $healthScaleCompanionRoot 'Source'
 $healthScaleSolution = Join-Path $healthScaleSourceRoot 'HealthScale.sln'
@@ -104,7 +106,7 @@ function Assert-X64Pe {
 }
 
 try {
-    Write-Log 'PowerScaler Labs Native Causal Probe Foundation publish started.'
+    Write-Log 'PowerScaler Labs Native Causal Trace Transport Gate publish started.'
     $dotnetCommand = Get-Command dotnet -ErrorAction Stop
     $script:DotNetExe = $dotnetCommand.Source
     $script:MSBuildExe = Find-MSBuild
@@ -166,6 +168,10 @@ try {
     Invoke-DotNet -Arguments @('run', '--project', (Join-Path $root 'src\PowerScalerLabs.ProbeHost\PowerScalerLabs.ProbeHost.csproj'), '-c', 'Release', '--no-build', '--', '--architecture-self-test')
 
     Invoke-MSBuild -Arguments @($nativeProbeProject, '/m', '/p:Configuration=Release', '/p:Platform=x64', '/nologo')
+    Invoke-MSBuild -Arguments @($nativeTransportTestsProject, '/m', '/p:Configuration=Release', '/p:Platform=x64', '/nologo')
+    Write-Log "native transport offline tests"
+    & $nativeTransportTestsExe 2>&1 | ForEach-Object { $text = $_.ToString(); Write-Host $text; Add-Content -LiteralPath $logPath -Value $text -Encoding UTF8 }
+    if ($LASTEXITCODE -ne 0) { throw "Native transport tests failed with exit code $LASTEXITCODE." }
     Invoke-MSBuild -Arguments @($healthScaleSolution, '/m', '/p:Configuration=Release', '/p:Platform=x64', '/nologo')
 
     Invoke-DotNet -Arguments @(
@@ -242,7 +248,7 @@ try {
 
     $sourceBuildId = (Get-Content -LiteralPath (Join-Path $root 'BUILD_ID.txt') -Raw).Trim()
     @(
-        'PowerScaler Labs - Native Causal Probe Foundation + HealthScale Companion 1',
+        'PowerScaler Labs - Native Causal Trace Transport Gate + HealthScale Companion 1',
         "Build ID: $sourceBuildId",
         "Published: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
         "PowerScalerLabs.exe SHA-256: $appHash",
@@ -251,13 +257,14 @@ try {
         "PowerScalerLabs.NativeProbe.dll SHA-256: $probeDllHash",
         "HealthScale 1.1.1 xinput_other.dll SHA-256: $healthScaleDllHash",
         'Runtime boundary: provider-based external read-only access, fighter generations, provenance, and supporting chronology; no game-memory writes, hooks, or injection.',
-        'Probe boundary: explicit attachment only; native ABI and heartbeat infrastructure are present; gameplay instrumentation and writes are inactive.',
+        'Probe boundary: explicit attachment and synthetic native-event transport only; gameplay instrumentation and writes are inactive.',
         'Companion boundary: HealthScale is independently built from frozen source and installed only through explicit fail-closed desktop-app actions.'
     ) | Set-Content -LiteralPath (Join-Path $artifacts 'BUILD_INFO.txt') -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $artifacts 'BUILD_ID.txt') -Value $sourceBuildId -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $probeArtifacts 'BUILD_ID.txt') -Value $sourceBuildId -Encoding UTF8
 
     Write-Log "Publish completed: $appExe"
-    Write-Log "Probe foundation staged: $probeHostExe and $probeDll"
+    Write-Log "Probe transport gate staged: $probeHostExe and $probeDll"
     Write-Log "HealthScale companion payload staged: $healthScalePayloadDll"
     exit 0
 }

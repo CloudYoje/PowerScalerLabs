@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using PowerScalerLabs.Protocol;
 
@@ -5,14 +6,19 @@ namespace PowerScalerLabs.ProbeHost;
 
 internal sealed class ProbeHostService : IDisposable
 {
+    private const int MaximumBufferedEvents = 20_000;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly ProbePipeServer _pipeServer = new();
+    private readonly ConcurrentQueue<ProbeEventMessage> _events = new();
+    private readonly HashSet<int> _blockedProcessIds = [];
     private ProbeInjectionSession? _session;
+    private CancellationTokenSource? _consumerStop;
+    private Task? _consumerTask;
     private ProbeState _state = ProbeState.Starting;
     private string _detail = "ProbeHost is starting.";
     private long _heartbeatSequence;
-    private string _buildId = "PowerScaler Labs - Native Causal Probe Foundation Gate - Runtime Protocol 8 - Probe Protocol 1";
+    private string _buildId = "PowerScaler Labs - Native Causal Trace Transport Gate - Runtime Protocol 8 - Probe Protocol 2 - Native ABI 2 - Pre-Watchpoint";
 
     internal async Task<int> RunAsync()
     {
@@ -25,211 +31,231 @@ internal sealed class ProbeHostService : IDisposable
             {
                 try
                 {
-                    await _pipeServer.ServeAsync(CreateStatus, HandleCommandAsync, _shutdown.Token).ConfigureAwait(false);
+                    await _pipeServer.ServeAsync(CreateStatus, HandleCommandAsync, DrainEvents, _shutdown.Token).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
-                {
-                    break;
-                }
-                catch (IOException exception)
-                {
-                    ProbeLog.Write($"Pipe disconnected: {exception.Message}");
-                }
-                catch (Exception exception)
-                {
-                    ProbeLog.Write($"Pipe lifecycle error: {exception}");
-                }
+                catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { break; }
+                catch (IOException exception) { ProbeLog.Write($"Pipe disconnected: {exception.Message}"); }
+                catch (Exception exception) { ProbeLog.Write($"Pipe lifecycle error: {exception}"); }
 
                 if (!_shutdown.IsCancellationRequested)
                 {
-                    ProbeLog.Write("App disconnected; requesting safe probe detach and host shutdown.");
-                    await DetachAsync(CancellationToken.None).ConfigureAwait(false);
+                    ProbeLog.Write("App disconnected; immediately shutting down and unloading NativeProbe.");
+                    await DetachCoreAsync(CancellationToken.None).ConfigureAwait(false);
                     _shutdown.Cancel();
                 }
             }
         }
         finally
         {
-            await DetachAsync(CancellationToken.None).ConfigureAwait(false);
+            await DetachCoreAsync(CancellationToken.None).ConfigureAwait(false);
         }
         ProbeLog.Write("ProbeHost stopped normally.");
         return 0;
     }
 
-    private async Task HandleCommandAsync(ProbeCommand command, CancellationToken cancellationToken)
+    private async Task<ProbeCommandResult> HandleCommandAsync(ProbeCommand command, CancellationToken cancellationToken)
     {
-        switch (command.Command.Trim().ToLowerInvariant())
+        string name = command.Command.Trim().ToLowerInvariant();
+        try
         {
-            case "attach":
-                if (command.GameProcessId is not int processId)
-                {
-                    SetState(ProbeState.Faulted, "Attach rejected: no DBXV2 PID was supplied.");
-                    return;
-                }
-                await AttachAsync(processId, cancellationToken).ConfigureAwait(false);
-                break;
-            case "detach":
-                await DetachAsync(cancellationToken).ConfigureAwait(false);
-                break;
-            case "ping":
-                break;
-            case "shutdown":
-                await DetachAsync(CancellationToken.None).ConfigureAwait(false);
-                _shutdown.Cancel();
-                break;
-            default:
-                SetState(ProbeState.Faulted, $"Unknown probe command: {command.Command}");
-                break;
+            return name switch
+            {
+                "attach" when command.GameProcessId is int pid => await AttachAsync(command, pid, cancellationToken).ConfigureAwait(false),
+                "attach" => Result(command, false, "Attach rejected: no DBXV2 PID was supplied."),
+                "detach" => await DetachAsync(command, cancellationToken).ConfigureAwait(false),
+                "emit_synthetic_event" => await EmitAsync(command, cancellationToken).ConfigureAwait(false),
+                "ping" => Result(command, true, "ProbeHost is responsive."),
+                "shutdown" => await ShutdownAsync(command).ConfigureAwait(false),
+                _ => Result(command, false, $"Unknown probe command: {command.Command}")
+            };
+        }
+        catch (OperationCanceledException) { return Result(command, false, "Command canceled before completion."); }
+        catch (Exception exception)
+        {
+            ProbeLog.Write($"Command {name} failed: {exception}");
+            return Result(command, false, exception.Message);
         }
     }
 
-    private async Task AttachAsync(int processId, CancellationToken cancellationToken)
+    private async Task<ProbeCommandResult> AttachAsync(ProbeCommand command, int processId, CancellationToken cancellationToken)
     {
         await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        ProbeInjectionSession? candidate = null;
         try
         {
-            if (_session is not null)
-            {
-                SetState(ProbeState.Faulted, "Attach rejected: a probe session already exists.");
-                return;
-            }
+            if (_session is not null) return Result(command, false, "Attach rejected: a probe session already exists.");
+            if (IsBlocked(processId)) return Result(command, false, "Attach blocked: a previous unload could not be proven for this live PID.");
+
             SetState(ProbeState.Injecting, $"Validating DBXV2 PID {processId} and loading NativeProbe.");
-            ProbeLog.Write($"Probe attach requested for PID {processId}.");
             string probePath = Path.Combine(AppContext.BaseDirectory, "PowerScalerLabs.NativeProbe.dll");
-            ProbeInjectionSession session = await ProbeInjector.AttachAsync(processId, probePath, cancellationToken)
-                .ConfigureAwait(false);
-            _session = session;
+            candidate = await ProbeInjector.AttachAsync(processId, probePath, cancellationToken).ConfigureAwait(false);
             SetState(ProbeState.WaitingForHandshake, "NativeProbe loaded; waiting for ABI handshake and heartbeat.");
-            if (!await session.WaitForReadyAsync(cancellationToken).ConfigureAwait(false))
+            if (!await candidate.WaitForReadyAsync(cancellationToken).ConfigureAwait(false))
             {
-                SetState(ProbeState.Faulted, $"Native handshake failed; status {session.SharedMemory.InitializationStatus}.");
-                ProbeLog.Write(_detail);
-                return;
+                bool removed = await RollbackCandidateAsync(candidate).ConfigureAwait(false);
+                candidate = null;
+                if (!removed) _blockedProcessIds.Add(processId);
+                SetState(ProbeState.Faulted, removed ? "Native handshake failed; injection was rolled back." : "Native handshake failed and module removal could not be proven; PID quarantined.");
+                return Result(command, false, _detail);
             }
-            SetState(ProbeState.Ready, "Native ABI handshake established; instrumentation is inactive.");
-            ProbeLog.Write("Native ABI handshake established; probe heartbeat healthy.");
-        }
-        catch (Exception exception)
-        {
-            SetState(ProbeState.Faulted, $"Attach failed: {exception.Message}");
-            ProbeLog.Write($"Attach failed: {exception}");
+
+            _session = candidate;
+            candidate = null;
+            StartConsumer(_session);
+            SetState(ProbeState.Ready, "Native ABI handshake established; synthetic transport is ready.");
+            return Result(command, true, _detail);
         }
         finally
         {
+            if (candidate is not null)
+            {
+                bool removed = await RollbackCandidateAsync(candidate).ConfigureAwait(false);
+                if (!removed) _blockedProcessIds.Add(processId);
+            }
             _lifecycleGate.Release();
         }
     }
 
-    private async Task DetachAsync(CancellationToken cancellationToken)
+    private async Task<ProbeCommandResult> EmitAsync(ProbeCommand command, CancellationToken cancellationToken)
+    {
+        ProbeInjectionSession? session = _session;
+        if (session is null || _state != ProbeState.Ready) return Result(command, false, "Synthetic event rejected: probe is not ready.");
+        int count = command.EventCount ?? 1;
+        int interval = command.EventIntervalMilliseconds ?? 0;
+        NativeCommandOutcome outcome = await session.SharedMemory.EmitSyntheticEventsAsync(
+            command.TraceSessionId ?? 0, command.WatchId ?? 0, count, interval, cancellationToken).ConfigureAwait(false);
+        bool success = outcome.ResultCode == 0;
+        return new ProbeCommandResult(command.CommandId, command.Command, success,
+            success ? $"Native generation completed: {outcome.GeneratedEventCount} event(s)." : $"Native generation failed with result {outcome.ResultCode}.",
+            _state, outcome.GeneratedEventCount, session.SharedMemory.DroppedEventCount);
+    }
+
+    private async Task<ProbeCommandResult> DetachAsync(ProbeCommand command, CancellationToken cancellationToken)
+    {
+        bool removed = await DetachCoreAsync(cancellationToken).ConfigureAwait(false);
+        return Result(command, removed, removed ? "NativeProbe shutdown and module removal confirmed." : _detail);
+    }
+
+    private async Task<ProbeCommandResult> ShutdownAsync(ProbeCommand command)
+    {
+        bool removed = await DetachCoreAsync(CancellationToken.None).ConfigureAwait(false);
+        if (removed) _shutdown.Cancel();
+        return Result(command, removed, removed ? "ProbeHost shutdown authorized after confirmed module removal." : _detail);
+    }
+
+    private async Task<bool> DetachCoreAsync(CancellationToken cancellationToken)
     {
         await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             ProbeInjectionSession? session = _session;
-            if (session is null)
-            {
-                if (!_shutdown.IsCancellationRequested)
-                {
-                    SetState(ProbeState.Idle, "Available; no probe is attached.");
-                }
-                return;
-            }
+            if (session is null) return true;
             SetState(ProbeState.ShuttingDown, "Requesting native safe-to-unload state.");
-            ProbeLog.Write("Probe detach requested.");
             bool unloaded;
-            try
-            {
-                unloaded = await session.ShutdownAndUnloadAsync(cancellationToken).ConfigureAwait(false);
-            }
+            try { unloaded = await session.ShutdownAndUnloadAsync(cancellationToken).ConfigureAwait(false); }
             catch (Exception exception)
             {
                 SetState(ProbeState.Faulted, $"Detach failed before unload confirmation: {exception.Message}");
-                ProbeLog.Write($"Detach failure: {exception}");
-                return;
+                return false;
             }
             if (!unloaded)
             {
-                SetState(ProbeState.Faulted, "NativeProbe did not confirm safe unload; DLL was left loaded.");
-                ProbeLog.Write(_detail);
-                return;
+                _blockedProcessIds.Add(session.GameProcess.Id);
+                SetState(ProbeState.Faulted, "NativeProbe module removal was not proven; PID quarantined.");
+                return false;
             }
+            await StopConsumerAsync().ConfigureAwait(false);
             session.Dispose();
             _session = null;
-            SetState(ProbeState.Idle, "Probe detached cleanly; DBXV2 remains running.");
-            ProbeLog.Write("FreeLibrary completed and remote probe module removal was confirmed.");
+            SetState(ProbeState.Idle, "Probe detached cleanly; module removal confirmed.");
+            return true;
         }
-        finally
+        finally { _lifecycleGate.Release(); }
+    }
+
+    private static async Task<bool> RollbackCandidateAsync(ProbeInjectionSession session)
+    {
+        try { return await session.ShutdownAndUnloadAsync(CancellationToken.None).ConfigureAwait(false); }
+        catch (Exception exception) { ProbeLog.Write($"Candidate rollback failed: {exception}"); return false; }
+        finally { session.Dispose(); }
+    }
+
+    private bool IsBlocked(int processId)
+    {
+        if (!_blockedProcessIds.Contains(processId)) return false;
+        try { if (!Process.GetProcessById(processId).HasExited) return true; }
+        catch (ArgumentException) { }
+        _blockedProcessIds.Remove(processId);
+        return false;
+    }
+
+    private void StartConsumer(ProbeInjectionSession session)
+    {
+        _consumerStop = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
+        _consumerTask = Task.Run(() => ConsumeEvents(session, _consumerStop.Token));
+    }
+
+    private void ConsumeEvents(ProbeInjectionSession session, CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested && session.IsGameAlive)
         {
-            _lifecycleGate.Release();
+            session.SharedMemory.EventReady.WaitOne(100);
+            foreach (ProbeEventMessage traceEvent in session.SharedMemory.DrainCommittedEvents())
+            {
+                if (_events.Count >= MaximumBufferedEvents) _events.TryDequeue(out _);
+                _events.Enqueue(traceEvent);
+            }
         }
     }
+
+    private async Task StopConsumerAsync()
+    {
+        _consumerStop?.Cancel();
+        if (_consumerTask is not null)
+        {
+            try { await _consumerTask.ConfigureAwait(false); } catch (OperationCanceledException) { }
+        }
+        _consumerStop?.Dispose();
+        _consumerStop = null;
+        _consumerTask = null;
+    }
+
+    private IReadOnlyList<ProbeEventMessage> DrainEvents()
+    {
+        List<ProbeEventMessage> result = [];
+        while (result.Count < ProbeSharedMemory.EventCapacity && _events.TryDequeue(out ProbeEventMessage? traceEvent)) result.Add(traceEvent);
+        return result;
+    }
+
+    private ProbeCommandResult Result(ProbeCommand command, bool success, string detail) =>
+        new(command.CommandId, command.Command, success, detail, _state, 0, _session?.SharedMemory.DroppedEventCount ?? 0);
 
     private ProbeStatusMessage CreateStatus()
     {
         ProbeInjectionSession? session = _session;
         if (session is not null)
         {
-            if (!session.IsGameAlive)
-            {
-                session.Dispose();
-                _session = null;
-                SetState(ProbeState.Idle, "DBXV2 exited; probe session resources were released.");
-            }
-            else
-            {
-                session.SharedMemory.WriteHostHeartbeat();
-                if (_state == ProbeState.Ready)
-                {
-                    long age = Stopwatch.GetTimestamp() - session.SharedMemory.ProbeHeartbeatQpc;
-                    if (age > Stopwatch.Frequency * 3)
-                    {
-                        SetState(ProbeState.Faulted, "Native probe heartbeat is stale; instrumentation remains inactive.");
-                    }
-                }
-            }
+            session.SharedMemory.WriteHostHeartbeat();
+            if (!session.IsGameAlive) SetState(ProbeState.Faulted, "DBXV2 exited while a probe session was active.");
+            else if (_state == ProbeState.Ready && Stopwatch.GetTimestamp() - session.SharedMemory.ProbeHeartbeatQpc > Stopwatch.Frequency * 3)
+                SetState(ProbeState.Faulted, "Native probe heartbeat is stale; only synthetic transport was enabled.");
         }
-
-        session = _session;
-        return new ProbeStatusMessage(
-            ProbeProtocol.ProtocolVersion,
-            ProbeProtocol.NativeAbiVersion,
-            DateTimeOffset.UtcNow,
-            Stopwatch.GetTimestamp(),
-            Stopwatch.Frequency,
-            Environment.ProcessId,
-            session?.GameProcess.Id,
-            _state,
-            _detail,
-            session is not null,
-            session is not null && session.SharedMemory.IsHandshakeValid() &&
-                session.SharedMemory.State is ProbeSharedMemory.NativeState.Ready or ProbeSharedMemory.NativeState.Inert,
-            Interlocked.Increment(ref _heartbeatSequence),
-            session?.SharedMemory.ProbeHeartbeatQpc ?? 0,
-            session?.SharedMemory.DroppedEventCount ?? 0,
-            session?.SharedMemory.ActiveWatchpointCount ?? 0,
-            session?.SharedMemory.SessionId,
-            _buildId);
+        return new ProbeStatusMessage(ProbeProtocol.ProtocolVersion, ProbeProtocol.NativeAbiVersion, DateTimeOffset.UtcNow,
+            Stopwatch.GetTimestamp(), Stopwatch.Frequency, Environment.ProcessId, session?.GameProcess.Id, _state, _detail,
+            session is not null, session is not null && session.SharedMemory.IsHandshakeValid(),
+            Interlocked.Increment(ref _heartbeatSequence), session?.SharedMemory.ProbeHeartbeatQpc ?? 0,
+            session?.SharedMemory.DroppedEventCount ?? 0, 0, session?.SharedMemory.SessionId, _buildId);
     }
 
-    private void SetState(ProbeState state, string detail)
-    {
-        _state = state;
-        _detail = detail;
-    }
-
-    private void LoadBuildId()
-    {
-        string path = Path.Combine(AppContext.BaseDirectory, "BUILD_ID.txt");
-        if (File.Exists(path))
-        {
-            _buildId = File.ReadAllText(path).Trim();
-        }
-    }
+    private void SetState(ProbeState state, string detail) { _state = state; _detail = detail; ProbeLog.Write(detail); }
+    private void LoadBuildId() { string path = Path.Combine(AppContext.BaseDirectory, "BUILD_ID.txt"); if (File.Exists(path)) _buildId = File.ReadAllText(path).Trim(); }
 
     public void Dispose()
     {
         _shutdown.Cancel();
+        _consumerStop?.Cancel();
         _session?.Dispose();
+        _consumerStop?.Dispose();
         _lifecycleGate.Dispose();
         _shutdown.Dispose();
     }

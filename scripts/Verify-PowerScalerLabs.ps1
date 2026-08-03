@@ -46,9 +46,22 @@ $required = @(
     'src\PowerScalerLabs.ProbeHost\ProbeInjector.cs',
     'src\PowerScalerLabs.ProbeHost\RemoteModuleResolver.cs',
     'src\PowerScalerLabs.ProbeHost\ProbeSharedMemory.cs',
+    'src\PowerScalerLabs.ProbeHost\ProbePipeServer.cs',
+    'src\PowerScalerLabs.ProbeHost\ProbeArchitectureSelfTest.cs',
     'src\native\PowerScalerLabs.ProbeShared\PowerScalerProbeAbi.h',
     'src\native\PowerScalerLabs.NativeProbe\PowerScalerLabs.NativeProbe.vcxproj',
     'src\native\PowerScalerLabs.NativeProbe\dllmain.cpp',
+    'src\native\PowerScalerLabs.NativeProbe\ProbeEvents.cpp',
+    'src\native\PowerScalerLabs.NativeProbe\ProbeEvents.h',
+    'src\native\PowerScalerLabs.NativeProbe\ProbeWorker.cpp',
+    'src\native\PowerScalerLabs.NativeProbe\ProbeWorker.h',
+    'src\native\PowerScalerLabs.NativeProbe\ProbeRuntime.cpp',
+    'src\native\PowerScalerLabs.NativeProbe\ProbeRuntime.h',
+    'src\native\PowerScalerLabs.NativeProbe\ProbeSharedMemory.cpp',
+    'src\native\PowerScalerLabs.NativeProbe\ProbeSharedMemory.h',
+    'tests\native\PowerScalerLabs.NativeTransportTests.vcxproj',
+    'tests\native\transport_tests.cpp',
+    'CAUSAL_TRACE_TRANSPORT_GATE_AUDIT.md',
     'NATIVE_CAUSAL_PROBE_FOUNDATION_AUDIT.md',
     'src\PowerScalerLabs.App\Models\TelemetryViewModels.cs',
     'src\PowerScalerLabs.App\Companions\HealthScaleCompanionManager.cs',
@@ -159,10 +172,12 @@ foreach ($token in @(
 $probeProtocolText = Read-Utf8Text -Path (Join-Path $root 'src\PowerScalerLabs.Protocol\ProbeProtocol.cs')
 foreach ($token in @(
     'PowerScalerLabs.ProbeHost.CausalResearchGate',
-    'ProtocolVersion = 1',
-    'NativeAbiVersion = 1',
+    'ProtocolVersion = 2',
+    'NativeAbiVersion = 2',
     'ProbeStatusMessage',
-    'ProbeCommand'
+    'ProbeCommand',
+    'ProbeHostMessage',
+    'ProbeCommandResult'
 )) {
     if ($probeProtocolText.IndexOf($token, [System.StringComparison]::Ordinal) -lt 0) {
         throw "Probe protocol invariant is missing: $token"
@@ -192,7 +207,16 @@ foreach ($token in @('WriteProcessMemory', 'VirtualAllocEx', 'CreateRemoteThread
 $nativeText = (Get-ChildItem -LiteralPath (Join-Path $root 'src\native\PowerScalerLabs.NativeProbe') -Recurse -File |
     Where-Object { $_.Extension -in @('.cpp', '.h') } |
     ForEach-Object { Read-Utf8Text -Path $_.FullName }) -join "`n"
-foreach ($forbidden in @('AddVectoredExceptionHandler', 'WriteProcessMemory', 'DR0', 'EXCEPTION_SINGLE_STEP')) {
+foreach ($required in @('TryCommitEvent', 'InterlockedCompareExchange64', 'command_event_count', 'Synthetic')) {
+    if ($nativeText.IndexOf($required, [System.StringComparison]::Ordinal) -lt 0) {
+        throw "Required native transport primitive is missing: $required"
+    }
+}
+foreach ($forbidden in @(
+    'AddVectoredExceptionHandler', 'EXCEPTION_SINGLE_STEP', 'CONTEXT_DEBUG_REGISTERS',
+    'WatchpointManager', 'ArmWriteWatch', 'SuspendThread', 'SetThreadContext',
+    'Dr0', 'Dr1', 'Dr2', 'Dr3'
+)) {
     if ($nativeText.IndexOf($forbidden, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
         throw "Deferred instrumentation appeared in NativeProbe: $forbidden"
     }
@@ -200,6 +224,11 @@ foreach ($forbidden in @('AddVectoredExceptionHandler', 'WriteProcessMemory', 'D
 
 $appText = (Get-ChildItem -LiteralPath (Join-Path $root 'src\PowerScalerLabs.App') -Recurse -Filter '*.cs' -File |
     ForEach-Object { Read-Utf8Text -Path $_.FullName }) -join "`n"
+foreach ($required in @('DrainCommittedEvents', 'ProbeHostMessage.ForEvent', 'CommandId', 'ShutdownAsync')) {
+    if (($probeHostText + $appText + $probeProtocolText).IndexOf($required, [System.StringComparison]::Ordinal) -lt 0) {
+        throw "Required managed transport primitive is missing: $required"
+    }
+}
 foreach ($retiredToken in @(
     'SessionRecorder',
     'CandidateStore',
@@ -269,7 +298,7 @@ foreach ($match in $handlerMatches) {
     }
 }
 
-Write-Host 'PowerScaler Labs Native Causal Probe Foundation verification passed.'
+Write-Host 'PowerScaler Labs Native Causal Trace Transport Gate verification passed.'
 Write-Host 'App: Fighters / Research / Findings / Diagnostics / Tools; legacy scanner-recording-candidate UI removed.'
 Write-Host 'Runtime: external read-only foundation retained, including fighter generations, targeted scanner primitive, chronology, provenance, and read budgets.'
-Write-Host 'Probe: isolated explicit-attach host, ABI 1 shared memory, heartbeats, and clean-detach foundation; no instrumentation.'
+Write-Host 'Probe: ABI 2 correlated commands and synthetic MPSC transport; pre-watchpoint boundary enforced.'

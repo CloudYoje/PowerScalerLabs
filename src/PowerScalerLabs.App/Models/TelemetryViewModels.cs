@@ -143,3 +143,5 @@ public sealed record FindingRow(
     string Stage,
     string Evidence,
     string Role);
+
+public sealed record ProbeTraceEventRow(ulong Sequence, string Type, long Qpc, int NativeThread, ulong TraceSession, ulong WatchId);

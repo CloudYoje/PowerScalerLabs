@@ -9,17 +9,22 @@ internal static class ProbeArchitectureSelfTest
     {
         try
         {
-            Require(ProbeProtocol.ProtocolVersion == 1, "Probe protocol version must remain 1.");
-            Require(ProbeProtocol.NativeAbiVersion == 1, "Native ABI version must remain 1.");
+            Require(ProbeProtocol.ProtocolVersion == 2, "Probe protocol version must be 2.");
+            Require(ProbeProtocol.NativeAbiVersion == 2, "Native ABI version must be 2.");
             Require(Marshal.SizeOf<ProbeInitializationArguments>() == 808, "Managed initialization ABI size changed.");
             Require(ProbeSharedMemory.HeaderSize == 256, "Shared header size changed.");
             Require(ProbeSharedMemory.EventSize == 256, "Native event size changed.");
             Require(ProbeSharedMemory.EventCapacity == 256, "Native event capacity changed.");
+            Require(ProbeSharedMemory.Offset.CommandTraceSessionId == 136, "Trace-session mailbox offset changed.");
+            Require(ProbeSharedMemory.Offset.CommandWatchId == 144, "Watch-ID mailbox offset changed.");
+            Require(ProbeSharedMemory.Offset.CommandTargetAddress == 152, "Address mailbox offset changed.");
+            Require(ProbeSharedMemory.Offset.CommandGeneratedEventCount == 176, "Native result mailbox offset changed.");
             Require(!Enum.GetNames<ProbeState>().Contains("Armed", StringComparer.Ordinal),
                 "Foundation protocol must not expose an Armed state.");
-            output.WriteLine("Native Causal Probe Foundation self-test passed.");
+            output.WriteLine("Native Causal Trace Transport self-test passed.");
             output.WriteLine("- managed/native ABI dimensions are fixed");
             output.WriteLine("- probe protocol remains separate from Runtime protocol 8");
+            output.WriteLine("- ABI 2 mailbox offsets and 256-slot event ring are fixed");
             output.WriteLine("- no armed instrumentation state exists");
             return 0;
         }

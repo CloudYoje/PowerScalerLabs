@@ -196,6 +196,8 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="2*" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
                     <Border Style="{StaticResource CardStyle}" Margin="0,0,0,8">
@@ -216,6 +218,28 @@
                         </StackPanel>
                     </Border>
                     <Border Grid.Row="1" Style="{StaticResource CardStyle}" Margin="0,0,0,8">
+                        <StackPanel>
+                            <WrapPanel>
+                                <Button Content="Test Trace Transport" Style="{StaticResource PrimaryButtonStyle}" Click="TestTraceTransportButton_Click" />
+                                <Button Content="Run Sequential 25" Style="{StaticResource SecondaryButtonStyle}" Click="SequentialTraceButton_Click" />
+                                <Button Content="Run Wraparound 512" Style="{StaticResource SecondaryButtonStyle}" Click="WraparoundTraceButton_Click" />
+                                <Button Content="Run Overflow 10000" Style="{StaticResource SecondaryButtonStyle}" Click="OverflowTraceButton_Click" />
+                                <Button Content="Export Transport Gate Report" Style="{StaticResource SecondaryButtonStyle}" Click="ExportTransportReportButton_Click" />
+                            </WrapPanel>
+                            <TextBlock x:Name="TransportMetricsText" Text="requested 0 · acknowledged 0 · received 0 · missing 0 · duplicate 0 · malformed 0 · dropped 0" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <DataGrid Grid.Row="2" ItemsSource="{Binding ProbeTraceRows}" Margin="0,0,0,8">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Sequence" Binding="{Binding Sequence}" Width="85" />
+                            <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="90" />
+                            <DataGridTextColumn Header="Native QPC" Binding="{Binding Qpc}" Width="140" />
+                            <DataGridTextColumn Header="Thread" Binding="{Binding NativeThread}" Width="75" />
+                            <DataGridTextColumn Header="Trace session" Binding="{Binding TraceSession}" Width="*" />
+                            <DataGridTextColumn Header="Watch ID" Binding="{Binding WatchId}" Width="110" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <Border Grid.Row="3" Style="{StaticResource CardStyle}" Margin="0,0,0,8">
                         <DockPanel>
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0">
                                 <Button Content="New Epoch" Style="{StaticResource SecondaryButtonStyle}" Click="NewChronologyEpochButton_Click" />
@@ -229,7 +253,7 @@
                             </StackPanel>
                         </DockPanel>
                     </Border>
-                    <DataGrid Grid.Row="2" ItemsSource="{Binding ChronologyRows}">
+                    <DataGrid Grid.Row="4" ItemsSource="{Binding ChronologyRows}">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="95" />
                             <DataGridTextColumn Header="Seq" Binding="{Binding Sequence}" Width="65" />

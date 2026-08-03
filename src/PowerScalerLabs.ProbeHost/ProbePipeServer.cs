@@ -11,7 +11,8 @@ internal sealed class ProbePipeServer
 
     internal async Task ServeAsync(
         Func<ProbeStatusMessage> statusFactory,
-        Func<ProbeCommand, CancellationToken, Task> commandHandler,
+        Func<ProbeCommand, CancellationToken, Task<ProbeCommandResult>> commandHandler,
+        Func<IReadOnlyList<ProbeEventMessage>> eventDrain,
         CancellationToken cancellationToken)
     {
         await using NamedPipeServerStream pipe = new(
@@ -28,17 +29,26 @@ internal sealed class ProbePipeServer
         using StreamWriter writer = new(pipe, leaveOpen: true) { AutoFlush = true };
         using CancellationTokenSource connection = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         ConcurrentQueue<ProbeCommand> commands = new();
-        Task readerTask = ReadCommandsAsync(reader, commands, connection.Token);
+        ConcurrentQueue<ProbeHostMessage> immediateMessages = new();
+        Task readerTask = ReadCommandsAsync(reader, commands, immediateMessages, connection.Token);
         try
         {
             while (pipe.IsConnected && !connection.IsCancellationRequested)
             {
-                while (commands.TryDequeue(out ProbeCommand? command))
+                if (commands.TryDequeue(out ProbeCommand? command))
                 {
-                    await commandHandler(command, connection.Token).ConfigureAwait(false);
+                    ProbeCommandResult result = await commandHandler(command, connection.Token).ConfigureAwait(false);
+                    immediateMessages.Enqueue(ProbeHostMessage.ForCommandResult(result));
                 }
-                string json = JsonSerializer.Serialize(statusFactory(), JsonOptions);
-                await writer.WriteLineAsync(json).ConfigureAwait(false);
+                while (immediateMessages.TryDequeue(out ProbeHostMessage? message))
+                {
+                    await WriteMessageAsync(writer, message).ConfigureAwait(false);
+                }
+                foreach (ProbeEventMessage traceEvent in eventDrain())
+                {
+                    await WriteMessageAsync(writer, ProbeHostMessage.ForEvent(traceEvent)).ConfigureAwait(false);
+                }
+                await WriteMessageAsync(writer, ProbeHostMessage.ForStatus(statusFactory())).ConfigureAwait(false);
                 await Task.Delay(100, connection.Token).ConfigureAwait(false);
             }
         }
@@ -58,6 +68,7 @@ internal sealed class ProbePipeServer
     private static async Task ReadCommandsAsync(
         StreamReader reader,
         ConcurrentQueue<ProbeCommand> commands,
+        ConcurrentQueue<ProbeHostMessage> immediateMessages,
         CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
@@ -70,10 +81,21 @@ internal sealed class ProbePipeServer
             try
             {
                 ProbeCommand? command = JsonSerializer.Deserialize<ProbeCommand>(line, JsonOptions);
-                if (command is not null && !string.IsNullOrWhiteSpace(command.Command))
+                if (command is null || string.IsNullOrWhiteSpace(command.Command))
                 {
-                    commands.Enqueue(command);
+                    continue;
                 }
+                if (commands.Count >= ProbeProtocol.MaximumPendingCommands)
+                {
+                    immediateMessages.Enqueue(ProbeHostMessage.ForCommandResult(new ProbeCommandResult(
+                        command.CommandId,
+                        command.Command,
+                        false,
+                        "ProbeHost command queue is full.",
+                        ProbeState.Faulted)));
+                    continue;
+                }
+                commands.Enqueue(command);
             }
             catch (JsonException exception)
             {
@@ -81,4 +103,7 @@ internal sealed class ProbePipeServer
             }
         }
     }
+
+    private static Task WriteMessageAsync(StreamWriter writer, ProbeHostMessage message) =>
+        writer.WriteLineAsync(JsonSerializer.Serialize(message, JsonOptions));
 }

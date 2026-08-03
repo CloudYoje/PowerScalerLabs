@@ -35,6 +35,17 @@ public partial class MainWindow : Window
     private Task? _connectionTask;
     private bool _runtimeDesired = true;
     private int? _currentGameProcessId;
+    private bool _closeCommitted;
+    private ProbeStatusMessage? _lastProbeStatus;
+    private long _transportRequested;
+    private long _transportAcknowledged;
+    private long _transportMissing;
+    private long _transportDuplicates;
+    private long _transportMalformed;
+    private long _transportDropped;
+    private ulong _lastTransportSequence;
+    private readonly HashSet<ulong> _transportSequences = [];
+    private readonly List<string> _transportRuns = [];
 
     public MainWindow()
     {
@@ -52,7 +63,8 @@ public partial class MainWindow : Window
         _probeClient = new ProbeHostClient(
             _windowLifetime.Token,
             status => Dispatcher.Invoke(() => ApplyProbeStatus(status)),
-            message => Dispatcher.Invoke(() => AddLog(message)));
+            message => Dispatcher.Invoke(() => AddLog(message)),
+            traceEvent => Dispatcher.Invoke(() => ApplyProbeEvent(traceEvent)));
         InitializeFindings();
 
         AddLog("PowerScaler Labs Native Causal Probe Foundation started.");
@@ -64,6 +76,7 @@ public partial class MainWindow : Window
     public ObservableCollection<SessionEventRow> EventRows { get; } = [];
     public BulkObservableCollection<ChronologySampleRow> ChronologyRows { get; } = [];
     public ObservableCollection<FindingRow> FindingRows { get; } = [];
+    public ObservableCollection<ProbeTraceEventRow> ProbeTraceRows { get; } = [];
 
     private void InitializeFindings()
     {
@@ -115,8 +128,17 @@ public partial class MainWindow : Window
         await StartRuntimeAsync().ConfigureAwait(true);
     }
 
-    private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    private async void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        if (!_closeCommitted)
+        {
+            e.Cancel = true;
+            ProbeCommandResult result = await _probeClient.ShutdownAsync(TimeSpan.FromSeconds(8)).ConfigureAwait(true);
+            AddLog(result.Success ? "ProbeHost confirmed native shutdown and module removal." : $"Probe cleanup unresolved at App exit: {result.Detail}");
+            _closeCommitted = true;
+            Close();
+            return;
+        }
         _runtimeDesired = false;
         _probeClient.Dispose();
         TrySendShutdownSynchronously();
@@ -381,6 +403,9 @@ public partial class MainWindow : Window
 
     private void ApplyProbeStatus(ProbeStatusMessage message)
     {
+        _lastProbeStatus = message;
+        _transportDropped = message.DroppedNativeEventCount;
+        UpdateTransportMetrics();
         if (message.ProtocolVersion != ProbeProtocol.ProtocolVersion ||
             message.NativeAbiVersion != ProbeProtocol.NativeAbiVersion)
         {
@@ -412,6 +437,23 @@ public partial class MainWindow : Window
         AttachProbeButton.IsEnabled = message.State is ProbeState.Idle or ProbeState.Faulted && !message.ProbeDllLoaded;
         DetachProbeButton.IsEnabled = message.ProbeDllLoaded;
     }
+
+    private void ApplyProbeEvent(ProbeEventMessage traceEvent)
+    {
+        if (traceEvent.EventType != ProbeEventType.Synthetic || traceEvent.Origin != "NativeProbe" || traceEvent.ThreadId <= 0) _transportMalformed++;
+        if (!_transportSequences.Add(traceEvent.Sequence)) _transportDuplicates++;
+        if (_lastTransportSequence != 0 && traceEvent.Sequence > _lastTransportSequence + 1)
+            _transportMissing += checked((long)(traceEvent.Sequence - _lastTransportSequence - 1));
+        if (traceEvent.Sequence > _lastTransportSequence) _lastTransportSequence = traceEvent.Sequence;
+        ProbeTraceRows.Add(new(traceEvent.Sequence, traceEvent.EventType.ToString(), traceEvent.MonotonicTicks,
+            traceEvent.ThreadId, traceEvent.TraceSessionId, traceEvent.WatchId));
+        while (ProbeTraceRows.Count > 2_000) ProbeTraceRows.RemoveAt(0);
+        UpdateTransportMetrics();
+    }
+
+    private void UpdateTransportMetrics() => TransportMetricsText.Text =
+        $"requested {_transportRequested:N0} · acknowledged {_transportAcknowledged:N0} · received {_transportSequences.Count:N0} · " +
+        $"missing {_transportMissing:N0} · duplicate {_transportDuplicates:N0} · malformed {_transportMalformed:N0} · dropped {_transportDropped:N0}";
 
     private void ApplyChronologyStatus(ChronologyStatusMessage chronology)
     {
@@ -715,14 +757,67 @@ public partial class MainWindow : Window
             AddLog("Attach Probe requires a currently detected DBXV2 PID from the passive Runtime.");
             return;
         }
-        await _probeClient.SendAsync(new ProbeCommand("attach", gameProcessId)).ConfigureAwait(true);
-        AddLog($"Explicit probe attachment requested for DBXV2 PID {gameProcessId}.");
+        ProbeCommandResult result = await _probeClient.SendAsync(_probeClient.CreateCommand("attach", gameProcessId)).ConfigureAwait(true);
+        AddLog(result.Success ? $"Probe attached to DBXV2 PID {gameProcessId}." : $"Probe attach failed: {result.Detail}");
     }
 
     private async void DetachProbeButton_Click(object sender, RoutedEventArgs e)
     {
-        await _probeClient.SendAsync(new ProbeCommand("detach")).ConfigureAwait(true);
-        AddLog("Probe detach requested.");
+        ProbeCommandResult result = await _probeClient.SendAsync(_probeClient.CreateCommand("detach")).ConfigureAwait(true);
+        AddLog(result.Success ? "Probe detach and module removal confirmed." : $"Probe detach unresolved: {result.Detail}");
+    }
+
+    private async void TestTraceTransportButton_Click(object sender, RoutedEventArgs e) => await RunTransportTestAsync("normal", 1, 0).ConfigureAwait(true);
+    private async void SequentialTraceButton_Click(object sender, RoutedEventArgs e) => await RunTransportTestAsync("sequential-25", 25, 2).ConfigureAwait(true);
+    private async void WraparoundTraceButton_Click(object sender, RoutedEventArgs e) => await RunTransportTestAsync("wraparound-512", 512, 2).ConfigureAwait(true);
+    private async void OverflowTraceButton_Click(object sender, RoutedEventArgs e) => await RunTransportTestAsync("overflow-10000", 10_000, 0).ConfigureAwait(true);
+
+    private async Task RunTransportTestAsync(string name, int count, int intervalMilliseconds)
+    {
+        ulong traceSession = unchecked((ulong)DateTime.UtcNow.Ticks);
+        ulong watchId = unchecked((ulong)(_transportRuns.Count + 1));
+        int receivedBefore = _transportSequences.Count;
+        long droppedBefore = _transportDropped;
+        _transportRequested += count;
+        UpdateTransportMetrics();
+        ProbeCommand command = _probeClient.CreateCommand("emit_synthetic_event", traceSessionId: traceSession,
+            watchId: watchId, eventCount: count, intervalMilliseconds: intervalMilliseconds);
+        ProbeCommandResult result = await _probeClient.SendAsync(command, TimeSpan.FromSeconds(Math.Max(20, count * intervalMilliseconds / 1000 + 15))).ConfigureAwait(true);
+        if (result.Success) _transportAcknowledged += result.GeneratedEventCount;
+        _transportDropped = Math.Max(_transportDropped, result.DroppedNativeEventCount);
+        await Task.Delay(count >= 10_000 ? 1500 : 500).ConfigureAwait(true);
+        int received = _transportSequences.Count - receivedBefore;
+        string summary = $"{DateTimeOffset.Now:O} {name}: requested={count}, acknowledged={result.GeneratedEventCount}, received={received}, dropped_delta={_transportDropped - droppedBefore}, success={result.Success}, detail={result.Detail}";
+        _transportRuns.Add(summary);
+        AddLog(summary);
+        UpdateTransportMetrics();
+    }
+
+    private void ExportTransportReportButton_Click(object sender, RoutedEventArgs e)
+    {
+        string path = Path.Combine(_logsDirectory, $"CausalTraceTransportGate_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
+        ProbeStatusMessage? status = _lastProbeStatus;
+        string[] lines =
+        [
+            "PowerScaler Labs - Native Causal Trace Transport Gate Report",
+            $"Generated: {DateTimeOffset.Now:O}",
+            $"Game PID: {status?.GameProcessId?.ToString() ?? "not attached"}",
+            $"Protocol/ABI: {ProbeProtocol.ProtocolVersion}/{ProbeProtocol.NativeAbiVersion}",
+            $"State: {status?.State.ToString() ?? "disconnected"}",
+            $"Handshake: {status?.NativeHandshakeEstablished ?? false}",
+            $"Requested: {_transportRequested}", $"Acknowledged: {_transportAcknowledged}",
+            $"Received: {_transportSequences.Count}", $"Missing: {_transportMissing}",
+            $"Duplicate: {_transportDuplicates}", $"Malformed: {_transportMalformed}", $"Dropped: {_transportDropped}",
+            $"Heartbeat continuity: {(status is null ? "NOT OBSERVED" : "OBSERVED AT EXPORT")}",
+            "Detach/module removal: REQUIRED - perform the live detach gate",
+            "Reattach result: REQUIRED - perform the live reattach gate",
+            "Manual DBXV2 stability: REQUIRED - user confirmation has not been recorded",
+            "",
+            "Runs:",
+            .. _transportRuns
+        ];
+        File.WriteAllLines(path, lines);
+        AddLog($"Transport gate report exported: {path}");
     }
 
     private async void NewChronologyEpochButton_Click(object sender, RoutedEventArgs e)

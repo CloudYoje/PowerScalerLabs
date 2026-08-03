@@ -12,6 +12,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PowerScalerLabs.ProbeHost",
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PowerScalerLabs.NativeProbe", "src\native\PowerScalerLabs.NativeProbe\PowerScalerLabs.NativeProbe.vcxproj", "{D2981E3A-5B20-4DF4-9E54-AC384FD1C8F6}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PowerScalerLabs.NativeTransportTests", "tests\native\PowerScalerLabs.NativeTransportTests.vcxproj", "{3A301E12-770F-42CF-B1B0-C7D5EAF9982A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -38,6 +40,8 @@ Global
 		{D2981E3A-5B20-4DF4-9E54-AC384FD1C8F6}.Debug|Any CPU.Build.0 = Debug|x64
 		{D2981E3A-5B20-4DF4-9E54-AC384FD1C8F6}.Release|Any CPU.ActiveCfg = Release|x64
 		{D2981E3A-5B20-4DF4-9E54-AC384FD1C8F6}.Release|Any CPU.Build.0 = Release|x64
+		{3A301E12-770F-42CF-B1B0-C7D5EAF9982A}.Release|Any CPU.ActiveCfg = Release|x64
+		{3A301E12-770F-42CF-B1B0-C7D5EAF9982A}.Release|Any CPU.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

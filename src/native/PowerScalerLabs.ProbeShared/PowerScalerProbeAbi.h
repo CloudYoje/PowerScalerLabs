@@ -1,12 +1,13 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace psl::probe
 {
     inline constexpr std::uint32_t kSharedMagic = 0x50534C50;
     inline constexpr std::uint32_t kInitializationMagic = 0x49534C50;
-    inline constexpr std::uint32_t kAbiVersion = 1;
+    inline constexpr std::uint32_t kAbiVersion = 2;
     inline constexpr std::uint32_t kHeaderSize = 256;
     inline constexpr std::uint32_t kEventSize = 256;
     inline constexpr std::uint32_t kEventCapacity = 256;
@@ -25,7 +26,13 @@ namespace psl::probe
     enum class NativeCommand : std::uint32_t
     {
         None = 0,
-        Shutdown = 1
+        Shutdown = 1,
+        EmitSyntheticEvent = 2
+    };
+
+    enum class NativeEventType : std::uint32_t
+    {
+        Synthetic = 1
     };
 
 #pragma pack(push, 8)
@@ -53,7 +60,17 @@ namespace psl::probe
         std::uint64_t event_write_sequence;
         std::uint64_t event_read_sequence;
         std::uint32_t initialization_status;
-        std::uint32_t reserved[31];
+        std::uint32_t command_result_code;
+        std::uint64_t command_trace_session_id;
+        std::uint64_t command_watch_id;
+        std::uint64_t command_target_address;
+        std::uint32_t command_width;
+        std::uint32_t command_access_type;
+        std::uint32_t command_event_count;
+        std::uint32_t command_interval_milliseconds;
+        std::uint32_t command_generated_event_count;
+        std::uint32_t command_reserved;
+        std::uint32_t reserved[18];
     };
 
     struct RawProbeEvent
@@ -104,4 +121,18 @@ namespace psl::probe
     static_assert(sizeof(RawProbeEvent) == kEventSize);
     static_assert(sizeof(ProbeInitializationArguments) == 808);
     static_assert(sizeof(ProbeSharedRegion) == kHeaderSize + kEventSize * kEventCapacity);
+    static_assert(offsetof(ProbeSharedHeader, command_result_code) == 132);
+    static_assert(offsetof(ProbeSharedHeader, command_trace_session_id) == 136);
+    static_assert(offsetof(ProbeSharedHeader, command_watch_id) == 144);
+    static_assert(offsetof(ProbeSharedHeader, command_target_address) == 152);
+    static_assert(offsetof(ProbeSharedHeader, command_width) == 160);
+    static_assert(offsetof(ProbeSharedHeader, command_access_type) == 164);
+    static_assert(offsetof(ProbeSharedHeader, command_event_count) == 168);
+    static_assert(offsetof(ProbeSharedHeader, command_interval_milliseconds) == 172);
+    static_assert(offsetof(ProbeSharedHeader, command_generated_event_count) == 176);
+    static_assert(offsetof(RawProbeEvent, commit_sequence) == 0);
+    static_assert(offsetof(RawProbeEvent, sequence) == 8);
+    static_assert(offsetof(RawProbeEvent, qpc) == 16);
+    static_assert(offsetof(RawProbeEvent, registers) == 64);
+    static_assert(offsetof(RawProbeEvent, thread_id) == 224);
 }

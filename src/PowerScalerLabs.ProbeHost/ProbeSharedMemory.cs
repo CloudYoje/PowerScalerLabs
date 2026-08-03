@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -37,6 +38,15 @@ internal sealed class ProbeSharedMemory : IDisposable
         internal const long EventWriteSequence = 112;
         internal const long EventReadSequence = 120;
         internal const long InitializationStatus = 128;
+        internal const long CommandResultCode = 132;
+        internal const long CommandTraceSessionId = 136;
+        internal const long CommandWatchId = 144;
+        internal const long CommandTargetAddress = 152;
+        internal const long CommandWidth = 160;
+        internal const long CommandAccessType = 164;
+        internal const long CommandEventCount = 168;
+        internal const long CommandIntervalMilliseconds = 172;
+        internal const long CommandGeneratedEventCount = 176;
     }
 
     internal enum NativeState : uint
@@ -53,6 +63,7 @@ internal sealed class ProbeSharedMemory : IDisposable
     private readonly MemoryMappedFile _mapping;
     private readonly MemoryMappedViewAccessor _view;
     private long _commandSequence;
+    private readonly SemaphoreSlim _commandGate = new(1, 1);
 
     private ProbeSharedMemory(int gameProcessId, ulong nonceLow, ulong nonceHigh)
     {
@@ -117,6 +128,114 @@ internal sealed class ProbeSharedMemory : IDisposable
         CommandEvent.Set();
     }
 
+    internal async Task<NativeCommandOutcome> EmitSyntheticEventsAsync(
+        ulong traceSessionId,
+        ulong watchId,
+        int count,
+        int intervalMilliseconds,
+        CancellationToken cancellationToken)
+    {
+        if (count is < 1 or > PowerScalerLabs.Protocol.ProbeProtocol.MaximumEventBatch)
+        {
+            throw new ArgumentOutOfRangeException(nameof(count));
+        }
+        if (intervalMilliseconds is < 0 or > 1000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(intervalMilliseconds));
+        }
+
+        await _commandGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ulong sequence = checked((ulong)Interlocked.Increment(ref _commandSequence));
+            Write(Offset.CommandTraceSessionId, traceSessionId);
+            Write(Offset.CommandWatchId, watchId);
+            Write(Offset.CommandTargetAddress, 0UL);
+            Write(Offset.CommandWidth, 0u);
+            Write(Offset.CommandAccessType, 0u);
+            Write(Offset.CommandEventCount, checked((uint)count));
+            Write(Offset.CommandIntervalMilliseconds, checked((uint)intervalMilliseconds));
+            Write(Offset.CommandGeneratedEventCount, 0u);
+            Write(Offset.CommandResultCode, uint.MaxValue);
+            Write(Offset.Command, 2u);
+            Write(Offset.CommandSequence, sequence);
+            CommandEvent.Set();
+
+            using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(10, count * intervalMilliseconds / 1000 + 10)));
+            while (!timeout.IsCancellationRequested)
+            {
+                if (ReadUInt64(Offset.CommandAckSequence) == sequence)
+                {
+                    return new NativeCommandOutcome(
+                        ReadUInt32(Offset.CommandResultCode),
+                        checked((int)ReadUInt32(Offset.CommandGeneratedEventCount)));
+                }
+                await Task.Delay(10, timeout.Token).ConfigureAwait(false);
+            }
+            throw new TimeoutException("Native synthetic-event command did not acknowledge within the bounded timeout.");
+        }
+        finally
+        {
+            _commandGate.Release();
+        }
+    }
+
+    internal IReadOnlyList<PowerScalerLabs.Protocol.ProbeEventMessage> DrainCommittedEvents()
+    {
+        List<PowerScalerLabs.Protocol.ProbeEventMessage> events = [];
+        ulong readSequence = ReadUInt64(Offset.EventReadSequence);
+        while (events.Count < EventCapacity)
+        {
+            ulong expected = readSequence + 1;
+            int slot = checked((int)((expected - 1) % EventCapacity));
+            long eventOffset = HeaderSize + slot * EventSize;
+            if (ReadUInt64(eventOffset) != expected)
+            {
+                break;
+            }
+
+            byte[] bytes = new byte[EventSize];
+            _view.ReadArray(eventOffset, bytes, 0, bytes.Length);
+            Thread.MemoryBarrier();
+            if (ReadUInt64(eventOffset) != expected || BinaryPrimitives.ReadUInt64LittleEndian(bytes) != expected)
+            {
+                break;
+            }
+            events.Add(ParseEvent(bytes));
+            readSequence = expected;
+            Write(Offset.EventReadSequence, readSequence);
+        }
+        return events;
+    }
+
+    private static PowerScalerLabs.Protocol.ProbeEventMessage ParseEvent(ReadOnlySpan<byte> bytes)
+    {
+        ulong[] registers = new ulong[16];
+        for (int index = 0; index < registers.Length; index++)
+        {
+            registers[index] = BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(64 + index * 8, 8));
+        }
+        return new PowerScalerLabs.Protocol.ProbeEventMessage(
+            BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(8, 8)),
+            checked((long)BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(16, 8))),
+            (PowerScalerLabs.Protocol.ProbeEventType)BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(228, 4)),
+            checked((int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(224, 4))),
+            BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(24, 8)),
+            BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(32, 8)),
+            BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(40, 8)),
+            BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(48, 8)),
+            BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(56, 8)),
+            registers,
+            BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(192, 8)),
+            BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(200, 8)),
+            BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(208, 8)),
+            BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(216, 8)),
+            checked((int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(232, 4))),
+            checked((int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(236, 4))),
+            "NativeProbe");
+    }
+
     internal bool IsHandshakeValid() =>
         ReadUInt32(Offset.Magic) == Magic &&
         ReadUInt32(Offset.AbiVersion) == PowerScalerLabs.Protocol.ProbeProtocol.NativeAbiVersion &&
@@ -140,8 +259,11 @@ internal sealed class ProbeSharedMemory : IDisposable
         CommandEvent.Dispose();
         _view.Dispose();
         _mapping.Dispose();
+        _commandGate.Dispose();
     }
 }
+
+internal readonly record struct NativeCommandOutcome(uint ResultCode, int GeneratedEventCount);
 
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 8)]
 internal struct ProbeInitializationArguments
