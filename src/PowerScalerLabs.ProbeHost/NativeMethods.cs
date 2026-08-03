@@ -20,6 +20,9 @@ internal static class NativeMethods
     internal const uint MemReserve = 0x2000;
     internal const uint MemRelease = 0x8000;
     internal const uint PageReadWrite = 0x04;
+    internal const uint PageNoAccess = 0x01;
+    internal const uint PageGuard = 0x100;
+    internal const uint MemCommitState = 0x1000;
     internal const uint WaitObject0 = 0;
     internal const uint WaitTimeout = 258;
     internal const uint GetModuleHandleExFlagFromAddress = 0x00000004;
@@ -38,6 +41,14 @@ internal static class NativeMethods
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool WriteProcessMemory(SafeProcessHandle process, IntPtr address, byte[] buffer, nuint size, out nuint written);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool ReadProcessMemory(SafeProcessHandle process, IntPtr address, byte[] buffer, nuint size, out nuint read);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern nuint VirtualQueryEx(SafeProcessHandle process, IntPtr address,
+        out MemoryBasicInformation information, nuint length);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern SafeWaitHandle CreateRemoteThread(SafeProcessHandle process, IntPtr attributes, nuint stackSize, IntPtr startAddress, IntPtr parameter, uint flags, out uint threadId);
@@ -68,4 +79,17 @@ internal static class NativeMethods
     internal static extern bool IsWow64Process2(SafeProcessHandle process, out ushort processMachine, out ushort nativeMachine);
 
     internal static Win32Exception Error(string operation) => new(Marshal.GetLastWin32Error(), operation);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MemoryBasicInformation
+    {
+        internal IntPtr BaseAddress;
+        internal IntPtr AllocationBase;
+        internal uint AllocationProtect;
+        internal ushort PartitionId;
+        internal nuint RegionSize;
+        internal uint State;
+        internal uint Protect;
+        internal uint Type;
+    }
 }

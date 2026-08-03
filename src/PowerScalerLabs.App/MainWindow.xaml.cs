@@ -19,6 +19,14 @@ namespace PowerScalerLabs.App;
 
 public partial class MainWindow : Window
 {
+    private enum AppShutdownState
+    {
+        Running,
+        CleanupInProgress,
+        CleanupCompleted,
+        FinalClose
+    }
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly CancellationTokenSource _windowLifetime = new();
     private readonly SemaphoreSlim _pipeWriteLock = new(1, 1);
@@ -35,7 +43,8 @@ public partial class MainWindow : Window
     private Task? _connectionTask;
     private bool _runtimeDesired = true;
     private int? _currentGameProcessId;
-    private bool _closeCommitted;
+    private AppShutdownState _shutdownState;
+    private Task? _shutdownCleanupTask;
     private ProbeStatusMessage? _lastProbeStatus;
     private long _transportRequested;
     private long _transportAcknowledged;
@@ -45,7 +54,35 @@ public partial class MainWindow : Window
     private long _transportDropped;
     private ulong _lastTransportSequence;
     private readonly HashSet<ulong> _transportSequences = [];
+    private readonly Dictionary<ulong, int> _receivedByTraceSession = [];
     private readonly List<string> _transportRuns = [];
+    private readonly Dictionary<string, string> _transportGateResults = [];
+
+    private sealed record TransportRunOutcome(
+        string Name,
+        int Requested,
+        int Acknowledged,
+        int Received,
+        long Dropped,
+        long Unaccounted,
+        string State,
+        bool Success);
+    private sealed record HpWriteTraceSession(ulong TraceSessionId, ulong WatchId, ulong ActorAddress, int Slot,
+        long SlotGeneration, long BattleInstanceId, string IdentityKey, ulong TargetAddress, uint TargetOffset, long StartedQpc);
+    private sealed class FighterLifetime
+    {
+        internal required ulong ActorAddress { get; init; }
+        internal required int Slot { get; init; }
+        internal required long Generation { get; init; }
+        internal required long BattleInstanceId { get; init; }
+        internal required string IdentityKey { get; init; }
+        internal required long AcquiredQpc { get; init; }
+        internal long? ReleasedQpc { get; set; }
+    }
+    private readonly List<FighterLifetime> _fighterLifetimes = [];
+    private HpWriteTraceSession? _hpTraceSession;
+    private bool _probeReady;
+    private long _nextTraceId = DateTime.UtcNow.Ticks;
 
     public MainWindow()
     {
@@ -128,27 +165,56 @@ public partial class MainWindow : Window
         await StartRuntimeAsync().ConfigureAwait(true);
     }
 
-    private async void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        if (!_closeCommitted)
+        if (_shutdownState == AppShutdownState.FinalClose)
         {
-            e.Cancel = true;
-            ProbeCommandResult result = await _probeClient.ShutdownAsync(TimeSpan.FromSeconds(8)).ConfigureAwait(true);
-            AddLog(result.Success ? "ProbeHost confirmed native shutdown and module removal." : $"Probe cleanup unresolved at App exit: {result.Detail}");
-            _closeCommitted = true;
-            Close();
             return;
         }
-        _runtimeDesired = false;
-        _probeClient.Dispose();
-        TrySendShutdownSynchronously();
-        _windowLifetime.Cancel();
-        _pipeWriter?.Dispose();
-        _pipeWriter = null;
-        _pipe?.Dispose();
-        _pipe = null;
-        _runtimeProcess?.Dispose();
-        _runtimeProcess = null;
+
+        e.Cancel = true;
+        if (_shutdownState != AppShutdownState.Running)
+        {
+            return;
+        }
+
+        _shutdownState = AppShutdownState.CleanupInProgress;
+        _shutdownCleanupTask = PerformShutdownCleanupAsync();
+    }
+
+    private async Task PerformShutdownCleanupAsync()
+    {
+        try
+        {
+            ProbeCommandResult probeResult = await _probeClient.ShutdownAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+            AddLog(probeResult.Success
+                ? "Probe cleanup completed before App exit."
+                : $"Probe cleanup unresolved at App exit: {probeResult.Detail}");
+
+            await StopRuntimeAsync().ConfigureAwait(true);
+        }
+        catch (Exception exception)
+        {
+            AddLog($"Shutdown cleanup encountered a recoverable error: {exception.Message}");
+        }
+        finally
+        {
+            _runtimeDesired = false;
+            _probeClient.Dispose();
+            _windowLifetime.Cancel();
+            _pipeWriter?.Dispose();
+            _pipeWriter = null;
+            _pipe?.Dispose();
+            _pipe = null;
+            _runtimeProcess?.Dispose();
+            _runtimeProcess = null;
+            _shutdownState = AppShutdownState.CleanupCompleted;
+            _ = Dispatcher.BeginInvoke(() =>
+            {
+                _shutdownState = AppShutdownState.FinalClose;
+                Close();
+            });
+        }
     }
 
     private void FitWindowToWorkArea()
@@ -359,7 +425,7 @@ public partial class MainWindow : Window
         ComparisonPolicyText.Text =
             $"Comparison policy {comparison.PolicyId}: absolute {comparison.AbsoluteTolerance:G3}, relative {comparison.RelativeTolerance:G3}. {comparison.RawChronologyPolicy}";
 
-        ReconcileFighters(message.Fighters);
+        ReconcileFighters(message.Fighters, message.MonotonicTicks);
         DashboardFighterCountText.Text = $"{message.Fighters.Count} fighter{(message.Fighters.Count == 1 ? string.Empty : "s")}";
         FighterSummaryText.Text = message.BattleCoreAddress.HasValue
             ? $"{message.Fighters.Count} active fighter object(s) · {coreText}"
@@ -436,17 +502,38 @@ public partial class MainWindow : Window
             $"Host heartbeat {message.HeartbeatSequence:N0} · native QPC {message.NativeHeartbeatMonotonicTicks:N0} · dropped {message.DroppedNativeEventCount:N0} · watchpoints {message.ActiveWatchpointCount:N0}";
         AttachProbeButton.IsEnabled = message.State is ProbeState.Idle or ProbeState.Faulted && !message.ProbeDllLoaded;
         DetachProbeButton.IsEnabled = message.ProbeDllLoaded;
+        _probeReady = message.State == ProbeState.Ready;
+        ArmHpTraceButton.IsEnabled = _probeReady && _hpTraceSession is null && HpTraceFighterCombo.SelectedItem is FighterRow;
+        DisarmHpTraceButton.IsEnabled = message.ActiveWatchpointCount > 0 || _hpTraceSession is not null;
+        if (_hpTraceSession is not null && message.ActiveWatchpointCount == 0 && message.State == ProbeState.Ready)
+        {
+            HpTraceStateText.Text = "Disarmed by NativeProbe lifecycle or reconciliation.";
+            _hpTraceSession = null;
+        }
     }
 
     private void ApplyProbeEvent(ProbeEventMessage traceEvent)
     {
-        if (traceEvent.EventType != ProbeEventType.Synthetic || traceEvent.Origin != "NativeProbe" || traceEvent.ThreadId <= 0) _transportMalformed++;
+        if (traceEvent.EventType == ProbeEventType.InstrumentationFault)
+        {
+            _hpTraceSession = null;
+            HpTraceStateText.Text = $"Trace fault: complete thread coverage was lost (native {traceEvent.Registers[0]} / cleanup {traceEvent.Registers[1]}).";
+            ArmHpTraceButton.IsEnabled = false;
+            DisarmHpTraceButton.IsEnabled = false;
+            AddLog(HpTraceStateText.Text);
+        }
+        if (traceEvent.ThreadId <= 0 || (traceEvent.EventType == ProbeEventType.Synthetic && traceEvent.Origin != "NativeProbe")) _transportMalformed++;
         if (!_transportSequences.Add(traceEvent.Sequence)) _transportDuplicates++;
         if (_lastTransportSequence != 0 && traceEvent.Sequence > _lastTransportSequence + 1)
             _transportMissing += checked((long)(traceEvent.Sequence - _lastTransportSequence - 1));
         if (traceEvent.Sequence > _lastTransportSequence) _lastTransportSequence = traceEvent.Sequence;
+        _receivedByTraceSession.TryGetValue(traceEvent.TraceSessionId, out int traceCount);
+        _receivedByTraceSession[traceEvent.TraceSessionId] = traceCount + 1;
+        string rcx = CorrelateFighter(traceEvent.Registers.Count > 2 ? traceEvent.Registers[2] : 0, traceEvent.MonotonicTicks);
+        string rdx = CorrelateFighter(traceEvent.Registers.Count > 3 ? traceEvent.Registers[3] : 0, traceEvent.MonotonicTicks);
         ProbeTraceRows.Add(new(traceEvent.Sequence, traceEvent.EventType.ToString(), traceEvent.MonotonicTicks,
-            traceEvent.ThreadId, traceEvent.TraceSessionId, traceEvent.WatchId));
+            traceEvent.ThreadId, traceEvent.TraceSessionId, traceEvent.WatchId,
+            traceEvent.EventType == ProbeEventType.HardwareWriteTrap ? traceEvent.Origin : "—", rcx, rdx));
         while (ProbeTraceRows.Count > 2_000) ProbeTraceRows.RemoveAt(0);
         UpdateTransportMetrics();
     }
@@ -471,12 +558,15 @@ public partial class MainWindow : Window
             $"poll {chronology.LastPollDurationMilliseconds:F2} ms / max {chronology.EpochMaximumPollDurationMilliseconds:F2} ms";
     }
 
-    private void ReconcileFighters(IReadOnlyList<FighterSnapshot> fighters)
+    private void ReconcileFighters(IReadOnlyList<FighterSnapshot> fighters, long nowQpc)
     {
         HashSet<int> activeSlots = fighters.Select(fighter => fighter.Slot).ToHashSet();
         foreach (int staleSlot in _fighterBySlot.Keys.Where(slot => !activeSlots.Contains(slot)).ToArray())
         {
             FighterRow row = _fighterBySlot[staleSlot];
+            ReleaseFighterLifetime(row.IdentityKey, nowQpc);
+            if (_hpTraceSession?.IdentityKey == row.IdentityKey)
+                _ = DisarmHpTraceAsync("HP trace stopped: selected fighter generation released.");
             FighterRows.Remove(row);
             _fighterBySlot.Remove(staleSlot);
         }
@@ -490,8 +580,36 @@ public partial class MainWindow : Window
                 int insertIndex = FighterRows.TakeWhile(existing => existing.Slot < fighter.Slot).Count();
                 FighterRows.Insert(insertIndex, row);
             }
+            else if (!string.IsNullOrWhiteSpace(row.IdentityKey) && row.IdentityKey != fighter.Identity.IdentityKey)
+            {
+                ReleaseFighterLifetime(row.IdentityKey, nowQpc);
+                if (_hpTraceSession?.IdentityKey == row.IdentityKey)
+                    _ = DisarmHpTraceAsync("HP trace stopped: selected fighter generation released.");
+            }
+            if (_fighterLifetimes.All(lifetime => lifetime.IdentityKey != fighter.Identity.IdentityKey))
+                _fighterLifetimes.Add(new FighterLifetime
+                {
+                    ActorAddress = fighter.ActorAddress, Slot = fighter.Slot, Generation = fighter.Identity.SlotGeneration,
+                    BattleInstanceId = fighter.Identity.BattleInstanceId, IdentityKey = fighter.Identity.IdentityKey,
+                    AcquiredQpc = fighter.Identity.FirstSeenMonotonicTicks
+                });
             row.Update(fighter);
         }
+    }
+
+    private void ReleaseFighterLifetime(string identityKey, long releasedQpc)
+    {
+        FighterLifetime? lifetime = _fighterLifetimes.LastOrDefault(item => item.IdentityKey == identityKey && item.ReleasedQpc is null);
+        if (lifetime is not null) lifetime.ReleasedQpc = releasedQpc;
+        while (_fighterLifetimes.Count > 256) _fighterLifetimes.RemoveAt(0);
+    }
+
+    private string CorrelateFighter(ulong address, long eventQpc)
+    {
+        if (address == 0) return "—";
+        FighterLifetime? lifetime = _fighterLifetimes.LastOrDefault(item => item.ActorAddress == address &&
+            item.AcquiredQpc <= eventQpc && (item.ReleasedQpc is null || eventQpc <= item.ReleasedQpc));
+        return lifetime is null ? "—" : $"Slot {lifetime.Slot} / Gen {lifetime.Generation}";
     }
 
     private void AddEventRow(TelemetryEventMessage telemetryEvent)
@@ -767,17 +885,81 @@ public partial class MainWindow : Window
         AddLog(result.Success ? "Probe detach and module removal confirmed." : $"Probe detach unresolved: {result.Detail}");
     }
 
+    private void HpTraceFighterCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (HpTraceFighterCombo.SelectedItem is FighterRow fighter)
+        {
+            ulong target = checked(fighter.ActorAddress + RuntimeProtocol.CurrentHealthOffset);
+            HpTraceTargetText.Text = $"Slot {fighter.Slot} · Generation {fighter.SlotGeneration} · Battle {fighter.BattleInstanceId} · " +
+                $"Actor 0x{fighter.ActorAddress:X16} · Battle_Mob + 0x{RuntimeProtocol.CurrentHealthOffset:X} = 0x{target:X16}";
+        }
+        else HpTraceTargetText.Text = $"Select a live fighter generation. Target: Battle_Mob + 0x{RuntimeProtocol.CurrentHealthOffset:X}.";
+        ArmHpTraceButton.IsEnabled = _probeReady && _hpTraceSession is null && HpTraceFighterCombo.SelectedItem is FighterRow;
+    }
+
+    private async void ArmHpTraceButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_probeReady || HpTraceFighterCombo.SelectedItem is not FighterRow selected ||
+            !_fighterBySlot.TryGetValue(selected.Slot, out FighterRow? live) || live.IdentityKey != selected.IdentityKey)
+        {
+            HpTraceStateText.Text = "Arm rejected: select a currently live fighter generation while Probe is Ready.";
+            return;
+        }
+        ulong traceSessionId = unchecked((ulong)Interlocked.Increment(ref _nextTraceId));
+        ulong watchId = unchecked((ulong)Interlocked.Increment(ref _nextTraceId));
+        ulong targetAddress = checked(selected.ActorAddress + RuntimeProtocol.CurrentHealthOffset);
+        HpWriteTraceSession trace = new(traceSessionId, watchId, selected.ActorAddress, selected.Slot,
+            selected.SlotGeneration, selected.BattleInstanceId, selected.IdentityKey, targetAddress,
+            RuntimeProtocol.CurrentHealthOffset, Stopwatch.GetTimestamp());
+        ProbeCommand command = _probeClient.CreateCommand("arm_write_watch", traceSessionId: traceSessionId,
+            watchId: watchId, address: targetAddress, width: 4, accessType: ProbeAccessTypes.Write);
+        ProbeCommandResult result = await _probeClient.SendAsync(command, TimeSpan.FromSeconds(20)).ConfigureAwait(true);
+        if (result.Success)
+        {
+            _hpTraceSession = trace;
+            HpTraceStateText.Text = $"Armed · DR0 write/4 · {result.GeneratedEventCount} threads · trace {traceSessionId} · watch {watchId}";
+            ArmHpTraceButton.IsEnabled = false;
+            DisarmHpTraceButton.IsEnabled = true;
+        }
+        else HpTraceStateText.Text = $"Arm failed: {result.Detail}";
+        AddLog(HpTraceStateText.Text);
+    }
+
+    private async void DisarmHpTraceButton_Click(object sender, RoutedEventArgs e) =>
+        await DisarmHpTraceAsync("HP write trace disarmed by user.").ConfigureAwait(true);
+
+    private async Task DisarmHpTraceAsync(string successDetail)
+    {
+        if (_hpTraceSession is null && (_lastProbeStatus?.ActiveWatchpointCount ?? 0) == 0) return;
+        ProbeCommandResult result = await _probeClient.SendAsync(
+            _probeClient.CreateCommand("disarm_watch"), TimeSpan.FromSeconds(15)).ConfigureAwait(true);
+        if (result.Success)
+        {
+            _hpTraceSession = null;
+            HpTraceStateText.Text = successDetail;
+            ArmHpTraceButton.IsEnabled = _probeReady && HpTraceFighterCombo.SelectedItem is FighterRow;
+            DisarmHpTraceButton.IsEnabled = false;
+        }
+        else
+        {
+            HpTraceStateText.Text = $"Disarm failed; safe cleanup requested: {result.Detail}";
+            _ = await _probeClient.SendAsync(_probeClient.CreateCommand("shutdown"), TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+        }
+        AddLog(HpTraceStateText.Text);
+    }
+
     private async void TestTraceTransportButton_Click(object sender, RoutedEventArgs e) => await RunTransportTestAsync("normal", 1, 0).ConfigureAwait(true);
     private async void SequentialTraceButton_Click(object sender, RoutedEventArgs e) => await RunTransportTestAsync("sequential-25", 25, 2).ConfigureAwait(true);
     private async void WraparoundTraceButton_Click(object sender, RoutedEventArgs e) => await RunTransportTestAsync("wraparound-512", 512, 2).ConfigureAwait(true);
-    private async void OverflowTraceButton_Click(object sender, RoutedEventArgs e) => await RunTransportTestAsync("overflow-10000", 10_000, 0).ConfigureAwait(true);
+    private async void OverflowTraceButton_Click(object sender, RoutedEventArgs e) => await RunOverflowTestAsync().ConfigureAwait(true);
 
-    private async Task RunTransportTestAsync(string name, int count, int intervalMilliseconds)
+    private async Task<TransportRunOutcome> RunTransportTestAsync(string name, int count, int intervalMilliseconds)
     {
         ulong traceSession = unchecked((ulong)DateTime.UtcNow.Ticks);
         ulong watchId = unchecked((ulong)(_transportRuns.Count + 1));
-        int receivedBefore = _transportSequences.Count;
-        long droppedBefore = _transportDropped;
+        ProbeCommandResult baseline = await _probeClient.SendAsync(_probeClient.CreateCommand("ping"), TimeSpan.FromSeconds(3)).ConfigureAwait(true);
+        long droppedBefore = baseline.DroppedNativeEventCount;
+        _transportDropped = Math.Max(_transportDropped, droppedBefore);
         _transportRequested += count;
         UpdateTransportMetrics();
         ProbeCommand command = _probeClient.CreateCommand("emit_synthetic_event", traceSessionId: traceSession,
@@ -785,12 +967,67 @@ public partial class MainWindow : Window
         ProbeCommandResult result = await _probeClient.SendAsync(command, TimeSpan.FromSeconds(Math.Max(20, count * intervalMilliseconds / 1000 + 15))).ConfigureAwait(true);
         if (result.Success) _transportAcknowledged += result.GeneratedEventCount;
         _transportDropped = Math.Max(_transportDropped, result.DroppedNativeEventCount);
-        await Task.Delay(count >= 10_000 ? 1500 : 500).ConfigureAwait(true);
-        int received = _transportSequences.Count - receivedBefore;
-        string summary = $"{DateTimeOffset.Now:O} {name}: requested={count}, acknowledged={result.GeneratedEventCount}, received={received}, dropped_delta={_transportDropped - droppedBefore}, success={result.Success}, detail={result.Detail}";
+        (int received, long dropped, bool settled) = await WaitForTransportSettlementAsync(
+            traceSession, droppedBefore, result.GeneratedEventCount, count >= 10_000 ? TimeSpan.FromSeconds(8) : TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+        long unaccounted = Math.Max(0, result.GeneratedEventCount - received - dropped);
+        string state = !result.Success ? "Failed" : settled ? "Settled" : "TimedOutWithPendingAccounting";
+        bool success = result.Success && settled && unaccounted == 0;
+        string summary = $"{DateTimeOffset.Now:O} {name}: requested={count}, acknowledged={result.GeneratedEventCount}, received={received}, native_dropped={dropped}, unaccounted={unaccounted}, transport_state={state}, success={success}, detail={result.Detail}";
         _transportRuns.Add(summary);
         AddLog(summary);
+        string gateName = name switch { "normal" => "Normal", "sequential-25" => "Sequential 25", "wraparound-512" => "Wraparound 512", _ => name };
+        _transportGateResults[gateName] = success ? "PASS" : state;
+        UpdateTransportGateResult();
         UpdateTransportMetrics();
+        return new(name, count, result.GeneratedEventCount, received, dropped, unaccounted, state, success);
+    }
+
+    private async Task RunOverflowTestAsync()
+    {
+        TransportRunOutcome overflow = await RunTransportTestAsync("overflow-10000", 10_000, 0).ConfigureAwait(true);
+        TransportRunOutcome recovery = await RunTransportTestAsync("post-overflow-recovery", 1, 0).ConfigureAwait(true);
+        bool overflowPass = overflow.Acknowledged == overflow.Requested && overflow.Dropped > 0 &&
+            overflow.Unaccounted == 0 && recovery.Success && _lastProbeStatus?.State == ProbeState.Ready;
+        _transportGateResults["Overflow"] = overflowPass ? "PASS · drops expected" : overflow.State;
+        _transportGateResults["Post-overflow recovery"] = recovery.Success ? "PASS" : recovery.State;
+        UpdateTransportGateResult();
+        AddLog($"Post-overflow recovery: {(recovery.Success ? "PASS" : "FAIL")}");
+    }
+
+    private async Task<(int Received, long Dropped, bool Settled)> WaitForTransportSettlementAsync(
+        ulong traceSession, long droppedBefore, int acknowledged, TimeSpan timeout)
+    {
+        DateTime deadline = DateTime.UtcNow + timeout;
+        DateTime lastChange = DateTime.UtcNow;
+        int previousReceived = -1;
+        long previousDropped = -1;
+        while (DateTime.UtcNow < deadline)
+        {
+            _receivedByTraceSession.TryGetValue(traceSession, out int received);
+            long dropped = Math.Max(0, _transportDropped - droppedBefore);
+            if (received != previousReceived || dropped != previousDropped)
+            {
+                previousReceived = received;
+                previousDropped = dropped;
+                lastChange = DateTime.UtcNow;
+            }
+            bool accounted = received + dropped >= acknowledged;
+            if (accounted && DateTime.UtcNow - lastChange >= TimeSpan.FromMilliseconds(500))
+            {
+                return (received, dropped, true);
+            }
+            await Task.Delay(100).ConfigureAwait(true);
+        }
+        _receivedByTraceSession.TryGetValue(traceSession, out int finalReceived);
+        long finalDropped = Math.Max(0, _transportDropped - droppedBefore);
+        return (finalReceived, finalDropped, false);
+    }
+
+    private void UpdateTransportGateResult()
+    {
+        string Value(string name) => _transportGateResults.TryGetValue(name, out string? value) ? value : "NOT RUN";
+        TransportGateResultText.Text = $"LIVE TRANSPORT GATE · Normal: {Value("Normal")} · Sequential 25: {Value("Sequential 25")} · " +
+            $"Wraparound 512: {Value("Wraparound 512")} · Overflow: {Value("Overflow")} · Post-overflow recovery: {Value("Post-overflow recovery")}";
     }
 
     private void ExportTransportReportButton_Click(object sender, RoutedEventArgs e)

@@ -1,4 +1,5 @@
 #include "../../src/native/PowerScalerLabs.NativeProbe/ProbeEvents.h"
+#include "../../src/native/PowerScalerLabs.NativeProbe/WatchpointManager.h"
 
 #include <atomic>
 #include <cstring>
@@ -87,6 +88,24 @@ namespace
         while (consume_next(region, consumed)) { }
         require(TryCommitEvent(region, nullptr, event), "ring could not be reused after drain");
     }
+
+    void test_watchpoint_abi_and_dr7_control()
+    {
+        constexpr std::uint64_t unrelated = 0x0000000000A00000ULL;
+        constexpr std::uint64_t configured = BuildDr0WriteControl(unrelated);
+        require((configured & 1ULL) != 0, "DR0 local enable is missing");
+        require(((configured >> 16) & 3ULL) == 1ULL, "DR0 access is not write-only");
+        require(((configured >> 18) & 3ULL) == 3ULL, "DR0 length is not four bytes");
+        require((configured & ~kDr0ControlMask) == unrelated, "DR7 unrelated state was not preserved");
+        RawProbeEvent event{};
+        event.event_type = static_cast<std::uint32_t>(NativeEventType::HardwareWriteTrap);
+        event.access_type = static_cast<std::uint32_t>(NativeAccessType::Write);
+        event.access_width = 4;
+        event.registers[2] = 0x1111;
+        event.registers[3] = 0x2222;
+        require(sizeof(event) == kEventSize && event.access_width == 4 && event.registers[2] == 0x1111 &&
+            event.registers[3] == 0x2222, "hardware trap ABI fixture mismatch");
+    }
 }
 
 int main()
@@ -95,7 +114,8 @@ int main()
     {
         test_concurrent_wraparound_and_uniqueness();
         test_hole_overflow_and_reset();
-        std::cout << "Native transport tests passed: MPSC uniqueness, ordered holes, wraparound, overflow/drop, reset/reuse.\n";
+        test_watchpoint_abi_and_dr7_control();
+        std::cout << "Native tests passed: transport, DR7 construction, and hardware-trap ABI fields.\n";
         return 0;
     }
     catch (const std::exception& exception)

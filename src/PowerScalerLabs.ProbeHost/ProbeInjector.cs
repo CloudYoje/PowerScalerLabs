@@ -9,6 +9,7 @@ internal sealed class ProbeInjectionSession : IDisposable
 {
     private static readonly TimeSpan StageTimeout = TimeSpan.FromSeconds(10);
     private readonly SafeProcessHandle _processHandle;
+    private int _disposed;
 
     internal ProbeInjectionSession(Process gameProcess, SafeProcessHandle processHandle, ProcessModule remoteModule, ProbeSharedMemory sharedMemory, string probePath)
     {
@@ -24,6 +25,56 @@ internal sealed class ProbeInjectionSession : IDisposable
     internal ProbeSharedMemory SharedMemory { get; }
     internal string ProbePath { get; }
     internal bool IsGameAlive => !GameProcess.HasExited;
+
+    internal string DescribeTrapContext(ulong trapRip)
+    {
+        string location = $"0x{trapRip:X16}";
+        try
+        {
+            foreach (ProcessModule module in GameProcess.Modules)
+            {
+                ulong start = unchecked((ulong)module.BaseAddress.ToInt64());
+                ulong end = start + checked((ulong)module.ModuleMemorySize);
+                if (trapRip >= start && trapRip < end)
+                {
+                    location = $"{module.ModuleName}+0x{trapRip - start:X}";
+                    break;
+                }
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+        }
+
+        if (trapRip < 32) return $"NativeProbe | {location} | code unavailable";
+        ulong startAddress = trapRip - 32;
+        if (NativeMethods.VirtualQueryEx(_processHandle, unchecked((IntPtr)(long)startAddress),
+                out NativeMethods.MemoryBasicInformation memory, (nuint)Marshal.SizeOf<NativeMethods.MemoryBasicInformation>()) == 0 ||
+            memory.State != NativeMethods.MemCommitState || (memory.Protect & NativeMethods.PageGuard) != 0 ||
+            (memory.Protect & 0xff) == NativeMethods.PageNoAccess)
+            return $"NativeProbe | {location} | code unavailable";
+        ulong regionStart = unchecked((ulong)memory.BaseAddress.ToInt64());
+        ulong regionEnd = regionStart + checked((ulong)memory.RegionSize);
+        if (startAddress < regionStart || startAddress + 48 > regionEnd) return $"NativeProbe | {location} | code unavailable";
+        byte[] bytes = new byte[48];
+        if (!NativeMethods.ReadProcessMemory(_processHandle, unchecked((IntPtr)(long)startAddress), bytes,
+                (nuint)bytes.Length, out nuint read) || read != (nuint)bytes.Length)
+            return $"NativeProbe | {location} | code unavailable";
+        return $"NativeProbe | {location} | code[-32,+16]={Convert.ToHexString(bytes)}";
+    }
+
+    internal bool IsValidWatchAddress(ulong address, int width)
+    {
+        if (width != 4 || address == 0 || address > ulong.MaxValue - (ulong)width) return false;
+        if (NativeMethods.VirtualQueryEx(_processHandle, unchecked((IntPtr)(long)address),
+                out NativeMethods.MemoryBasicInformation memory, (nuint)Marshal.SizeOf<NativeMethods.MemoryBasicInformation>()) == 0 ||
+            memory.State != NativeMethods.MemCommitState || (memory.Protect & NativeMethods.PageGuard) != 0 ||
+            (memory.Protect & 0xff) == NativeMethods.PageNoAccess)
+            return false;
+        ulong regionStart = unchecked((ulong)memory.BaseAddress.ToInt64());
+        ulong regionEnd = regionStart + checked((ulong)memory.RegionSize);
+        return address >= regionStart && address + (ulong)width <= regionEnd;
+    }
 
     internal async Task<bool> WaitForReadyAsync(CancellationToken cancellationToken)
     {
@@ -105,6 +156,10 @@ internal sealed class ProbeInjectionSession : IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
         SharedMemory.Dispose();
         _processHandle.Dispose();
         GameProcess.Dispose();

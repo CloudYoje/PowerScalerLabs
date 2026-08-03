@@ -1,1 +1,1 @@
-PowerScaler Labs - Native Causal Trace Transport Gate - Runtime Protocol 8 - Probe Protocol 2 - Native ABI 2 - Pre-Watchpoint
+PowerScaler Labs - HP Write Watchpoint Gate - Runtime Protocol 8 - Probe Protocol 2 - Native ABI 2 - DR0 Observe Only

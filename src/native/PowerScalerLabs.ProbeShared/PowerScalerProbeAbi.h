@@ -27,12 +27,22 @@ namespace psl::probe
     {
         None = 0,
         Shutdown = 1,
-        EmitSyntheticEvent = 2
+        EmitSyntheticEvent = 2,
+        ArmWriteWatch = 3,
+        DisarmWatch = 4
     };
 
     enum class NativeEventType : std::uint32_t
     {
-        Synthetic = 1
+        Synthetic = 1,
+        HardwareWriteTrap = 2,
+        InstrumentationFault = 3
+    };
+
+    enum class NativeAccessType : std::uint32_t
+    {
+        None = 0,
+        Write = 1
     };
 
 #pragma pack(push, 8)
@@ -83,6 +93,7 @@ namespace psl::probe
         std::uint64_t rip;
         std::uint64_t rsp;
         std::uint64_t rflags;
+        // RAX, RBX, RCX, RDX, RSI, RDI, RBP, R8-R15, reserved.
         std::uint64_t registers[16];
         std::uint64_t dr6;
         std::uint64_t dr7;

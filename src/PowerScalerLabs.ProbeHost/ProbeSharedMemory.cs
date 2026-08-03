@@ -47,6 +47,7 @@ internal sealed class ProbeSharedMemory : IDisposable
         internal const long CommandEventCount = 168;
         internal const long CommandIntervalMilliseconds = 172;
         internal const long CommandGeneratedEventCount = 176;
+        internal const long CommandResultDetail = 180;
     }
 
     internal enum NativeState : uint
@@ -144,41 +145,51 @@ internal sealed class ProbeSharedMemory : IDisposable
             throw new ArgumentOutOfRangeException(nameof(intervalMilliseconds));
         }
 
+        return await ExecuteCommandAsync(2u, traceSessionId, watchId, 0, 0, 0,
+            checked((uint)count), checked((uint)intervalMilliseconds),
+            TimeSpan.FromSeconds(Math.Max(10, count * intervalMilliseconds / 1000 + 10)), cancellationToken).ConfigureAwait(false);
+    }
+
+    internal Task<NativeCommandOutcome> ArmWriteWatchAsync(
+        ulong traceSessionId, ulong watchId, ulong address, CancellationToken cancellationToken) =>
+        ExecuteCommandAsync(3u, traceSessionId, watchId, address, 4u, 1u, 0u, 0u, TimeSpan.FromSeconds(15), cancellationToken);
+
+    internal Task<NativeCommandOutcome> DisarmWatchAsync(CancellationToken cancellationToken) =>
+        ExecuteCommandAsync(4u, 0, 0, 0, 0, 0, 0, 0, TimeSpan.FromSeconds(15), cancellationToken);
+
+    private async Task<NativeCommandOutcome> ExecuteCommandAsync(uint command, ulong traceSessionId, ulong watchId,
+        ulong address, uint width, uint accessType, uint eventCount, uint intervalMilliseconds, TimeSpan commandTimeout,
+        CancellationToken cancellationToken)
+    {
         await _commandGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             ulong sequence = checked((ulong)Interlocked.Increment(ref _commandSequence));
             Write(Offset.CommandTraceSessionId, traceSessionId);
             Write(Offset.CommandWatchId, watchId);
-            Write(Offset.CommandTargetAddress, 0UL);
-            Write(Offset.CommandWidth, 0u);
-            Write(Offset.CommandAccessType, 0u);
-            Write(Offset.CommandEventCount, checked((uint)count));
-            Write(Offset.CommandIntervalMilliseconds, checked((uint)intervalMilliseconds));
+            Write(Offset.CommandTargetAddress, address);
+            Write(Offset.CommandWidth, width);
+            Write(Offset.CommandAccessType, accessType);
+            Write(Offset.CommandEventCount, eventCount);
+            Write(Offset.CommandIntervalMilliseconds, intervalMilliseconds);
             Write(Offset.CommandGeneratedEventCount, 0u);
+            Write(Offset.CommandResultDetail, 0u);
             Write(Offset.CommandResultCode, uint.MaxValue);
-            Write(Offset.Command, 2u);
+            Write(Offset.Command, command);
             Write(Offset.CommandSequence, sequence);
             CommandEvent.Set();
-
             using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(10, count * intervalMilliseconds / 1000 + 10)));
+            timeout.CancelAfter(commandTimeout);
             while (!timeout.IsCancellationRequested)
             {
                 if (ReadUInt64(Offset.CommandAckSequence) == sequence)
-                {
-                    return new NativeCommandOutcome(
-                        ReadUInt32(Offset.CommandResultCode),
-                        checked((int)ReadUInt32(Offset.CommandGeneratedEventCount)));
-                }
+                    return new NativeCommandOutcome(ReadUInt32(Offset.CommandResultCode),
+                        checked((int)ReadUInt32(Offset.CommandGeneratedEventCount)), ReadUInt32(Offset.CommandResultDetail));
                 await Task.Delay(10, timeout.Token).ConfigureAwait(false);
             }
-            throw new TimeoutException("Native synthetic-event command did not acknowledge within the bounded timeout.");
+            throw new TimeoutException("Native command did not acknowledge within the bounded timeout.");
         }
-        finally
-        {
-            _commandGate.Release();
-        }
+        finally { _commandGate.Release(); }
     }
 
     internal IReadOnlyList<PowerScalerLabs.Protocol.ProbeEventMessage> DrainCommittedEvents()
@@ -263,7 +274,7 @@ internal sealed class ProbeSharedMemory : IDisposable
     }
 }
 
-internal readonly record struct NativeCommandOutcome(uint ResultCode, int GeneratedEventCount);
+internal readonly record struct NativeCommandOutcome(uint ResultCode, int GeneratedEventCount, uint ResultDetail);
 
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 8)]
 internal struct ProbeInitializationArguments

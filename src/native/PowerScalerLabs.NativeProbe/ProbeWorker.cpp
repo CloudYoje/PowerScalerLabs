@@ -1,6 +1,7 @@
 #include "ProbeWorker.h"
 
 #include "ProbeEvents.h"
+#include "WatchpointManager.h"
 
 namespace
 {
@@ -41,6 +42,7 @@ namespace psl::probe
         WriteState(header, NativeState::Ready);
         std::uint64_t heartbeat_sequence = 0;
         std::uint64_t last_command_sequence = header.command_ack_sequence;
+        WatchpointManager watchpoints{};
 
         for (;;)
         {
@@ -53,6 +55,18 @@ namespace psl::probe
             if (host_heartbeat == 0 ||
                 static_cast<std::uint64_t>(now.QuadPart) > host_heartbeat + stale_limit)
             {
+                if (watchpoints.IsArmed())
+                {
+                    std::uint32_t disarm_result = 0;
+                    if (!watchpoints.Disarm(disarm_result))
+                    {
+                        header.command_result_code = disarm_result;
+                        WriteState(header, NativeState::Faulted);
+                        WaitForSingleObject(context->command_event, 250);
+                        continue;
+                    }
+                    header.active_watchpoint_count = 0;
+                }
                 WriteState(header, NativeState::Inert);
             }
             else if (header.state == static_cast<std::uint32_t>(NativeState::Inert))
@@ -67,7 +81,16 @@ namespace psl::probe
                 if (header.command == static_cast<std::uint32_t>(NativeCommand::Shutdown))
                 {
                     WriteState(header, NativeState::ShuttingDown);
+                    std::uint32_t disarm_result = 0;
+                    if (watchpoints.IsArmed() && !watchpoints.Disarm(disarm_result))
+                    {
+                        header.command_result_code = disarm_result;
+                        WriteState(header, NativeState::Faulted);
+                        WriteCounter(header.command_ack_sequence, command_sequence);
+                        continue;
+                    }
                     header.active_watchpoint_count = 0;
+                    header.command_result_code = 0;
                     WriteCounter(header.command_ack_sequence, command_sequence);
                     return 0;
                 }
@@ -106,8 +129,59 @@ namespace psl::probe
                     WriteCounter(header.command_ack_sequence, command_sequence);
                     continue;
                 }
+                if (header.command == static_cast<std::uint32_t>(NativeCommand::ArmWriteWatch))
+                {
+                    std::uint32_t arm_result = 0;
+                    const bool armed = watchpoints.Arm(*context, GetCurrentThreadId(),
+                        header.command_trace_session_id, header.command_watch_id, header.command_target_address,
+                        header.command_width, header.command_access_type, arm_result);
+                    header.command_result_code = arm_result;
+                    header.command_reserved = watchpoints.FailureThreadId();
+                    header.command_generated_event_count = watchpoints.InstrumentedThreadCount();
+                    header.active_watchpoint_count = armed ? 1U : 0U;
+                    WriteCounter(header.command_ack_sequence, command_sequence);
+                    continue;
+                }
+                if (header.command == static_cast<std::uint32_t>(NativeCommand::DisarmWatch))
+                {
+                    std::uint32_t disarm_result = 0;
+                    const bool disarmed = !watchpoints.IsArmed() || watchpoints.Disarm(disarm_result);
+                    header.command_result_code = disarm_result;
+                    header.command_generated_event_count = watchpoints.InstrumentedThreadCount();
+                    if (disarmed) header.active_watchpoint_count = 0;
+                    WriteCounter(header.command_ack_sequence, command_sequence);
+                    continue;
+                }
                 header.command_result_code = 2;
                 WriteCounter(header.command_ack_sequence, command_sequence);
+            }
+
+            if (watchpoints.IsArmed())
+            {
+                std::uint32_t reconcile_result = 0;
+                if (!watchpoints.Reconcile(reconcile_result))
+                {
+                    const std::uint64_t trace_session_id = watchpoints.TraceSessionId();
+                    const std::uint64_t watch_id = watchpoints.WatchId();
+                    const std::uint64_t watched_address = watchpoints.TargetAddress();
+                    std::uint32_t disarm_result = 0;
+                    header.command_result_code = reconcile_result;
+                    if (watchpoints.Disarm(disarm_result)) header.active_watchpoint_count = 0;
+                    RawProbeEvent fault{};
+                    LARGE_INTEGER fault_qpc{};
+                    QueryPerformanceCounter(&fault_qpc);
+                    fault.qpc = static_cast<std::uint64_t>(fault_qpc.QuadPart);
+                    fault.trace_session_id = trace_session_id;
+                    fault.watch_id = watch_id;
+                    fault.watched_address = watched_address;
+                    fault.thread_id = GetCurrentThreadId();
+                    fault.event_type = static_cast<std::uint32_t>(NativeEventType::InstrumentationFault);
+                    fault.registers[0] = reconcile_result;
+                    fault.registers[1] = disarm_result;
+                    TryCommitEvent(*context->region, context->event_ready, fault);
+                    WriteState(header, NativeState::Faulted);
+                }
+                header.command_generated_event_count = watchpoints.InstrumentedThreadCount();
             }
 
             WaitForSingleObject(context->command_event, 250);

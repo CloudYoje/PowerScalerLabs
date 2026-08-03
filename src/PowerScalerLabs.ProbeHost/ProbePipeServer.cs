@@ -35,10 +35,12 @@ internal sealed class ProbePipeServer
         {
             while (pipe.IsConnected && !connection.IsCancellationRequested)
             {
+                bool closeAfterFlush = false;
                 if (commands.TryDequeue(out ProbeCommand? command))
                 {
                     ProbeCommandResult result = await commandHandler(command, connection.Token).ConfigureAwait(false);
                     immediateMessages.Enqueue(ProbeHostMessage.ForCommandResult(result));
+                    closeAfterFlush = command.Command.Equals("shutdown", StringComparison.OrdinalIgnoreCase) && result.Success;
                 }
                 while (immediateMessages.TryDequeue(out ProbeHostMessage? message))
                 {
@@ -47,6 +49,12 @@ internal sealed class ProbePipeServer
                 foreach (ProbeEventMessage traceEvent in eventDrain())
                 {
                     await WriteMessageAsync(writer, ProbeHostMessage.ForEvent(traceEvent)).ConfigureAwait(false);
+                }
+                if (closeAfterFlush)
+                {
+                    await writer.FlushAsync().ConfigureAwait(false);
+                    ProbeLog.Write("Successful shutdown command result flushed; closing App pipe.");
+                    return;
                 }
                 await WriteMessageAsync(writer, ProbeHostMessage.ForStatus(statusFactory())).ConfigureAwait(false);
                 await Task.Delay(100, connection.Token).ConfigureAwait(false);

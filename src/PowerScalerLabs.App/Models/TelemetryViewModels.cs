@@ -31,6 +31,8 @@ public sealed class FighterRow : INotifyPropertyChanged
     private float _currentHealth;
     private float _maximumHealth;
     private long _slotGeneration;
+    private long _battleInstanceId;
+    private long _firstSeenMonotonicTicks;
     private string _identityKey = string.Empty;
     private DateTimeOffset _timestampUtc;
 
@@ -42,6 +44,8 @@ public sealed class FighterRow : INotifyPropertyChanged
     public float CurrentHealth { get => _currentHealth; private set => SetField(ref _currentHealth, value); }
     public float MaximumHealth { get => _maximumHealth; private set => SetField(ref _maximumHealth, value); }
     public long SlotGeneration { get => _slotGeneration; private set => SetField(ref _slotGeneration, value); }
+    public long BattleInstanceId { get => _battleInstanceId; private set => SetField(ref _battleInstanceId, value); }
+    public long FirstSeenMonotonicTicks { get => _firstSeenMonotonicTicks; private set => SetField(ref _firstSeenMonotonicTicks, value); }
     public string IdentityKey { get => _identityKey; private set => SetField(ref _identityKey, value); }
     public string IdentityShort => string.IsNullOrWhiteSpace(IdentityKey) ? "—" : IdentityKey.Split(':').LastOrDefault() ?? IdentityKey;
     public double HealthPercent => MaximumHealth > 0 ? CurrentHealth / MaximumHealth : 0;
@@ -56,6 +60,8 @@ public sealed class FighterRow : INotifyPropertyChanged
         CurrentHealth = snapshot.CurrentHealth;
         MaximumHealth = snapshot.MaximumHealth;
         SlotGeneration = snapshot.Identity.SlotGeneration;
+        BattleInstanceId = snapshot.Identity.BattleInstanceId;
+        FirstSeenMonotonicTicks = snapshot.Identity.FirstSeenMonotonicTicks;
         IdentityKey = snapshot.Identity.IdentityKey;
         TimestampUtc = snapshot.TimestampUtc;
         OnPropertyChanged(nameof(ActorAddressText));
@@ -144,4 +150,6 @@ public sealed record FindingRow(
     string Evidence,
     string Role);
 
-public sealed record ProbeTraceEventRow(ulong Sequence, string Type, long Qpc, int NativeThread, ulong TraceSession, ulong WatchId);
+public sealed record ProbeTraceEventRow(
+    ulong Sequence, string Type, long Qpc, int NativeThread, ulong TraceSession, ulong WatchId,
+    string TrapLocation, string RcxCorrelation, string RdxCorrelation);

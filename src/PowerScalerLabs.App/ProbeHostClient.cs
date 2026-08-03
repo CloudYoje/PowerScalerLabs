@@ -73,15 +73,15 @@ internal sealed class ProbeHostClient : IDisposable
     }
 
     internal ProbeCommand CreateCommand(string command, int? gameProcessId = null, ulong? traceSessionId = null,
-        ulong? watchId = null, int? eventCount = null, int? intervalMilliseconds = null) =>
+        ulong? watchId = null, ulong? address = null, int? width = null, int? accessType = null,
+        int? eventCount = null, int? intervalMilliseconds = null) =>
         new(Interlocked.Increment(ref _nextCommandId), command, gameProcessId, traceSessionId, watchId,
-            EventCount: eventCount, EventIntervalMilliseconds: intervalMilliseconds);
+            address, width, accessType, eventCount, intervalMilliseconds);
 
     internal async Task<ProbeCommandResult> ShutdownAsync(TimeSpan timeout)
     {
-        _closing = true;
         ProbeCommandResult result = await SendAsync(CreateCommand("shutdown"), timeout).ConfigureAwait(false);
-        if (!result.Success) _log($"Probe cleanup unresolved: {result.Detail}");
+        _closing = true;
         ClosePipe();
         return result;
     }

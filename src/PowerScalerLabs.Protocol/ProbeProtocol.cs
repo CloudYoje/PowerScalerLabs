@@ -35,7 +35,15 @@ public enum ProbeState
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ProbeEventType
 {
-    Synthetic = 1
+    Synthetic = 1,
+    HardwareWriteTrap = 2,
+    InstrumentationFault = 3
+}
+
+public static class ProbeAccessTypes
+{
+    public const int None = 0;
+    public const int Write = 1;
 }
 
 public sealed record ProbeStatusMessage(

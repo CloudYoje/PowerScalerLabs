@@ -15,6 +15,7 @@ $required = @(
     'PowerScalerLabs.sln',
     'README.md',
     'CAUSAL_RESEARCH_CLEANUP_AUDIT.md',
+    'CAUSAL_TRANSPORT_GATE_CLOSEOUT_HOTFIX_AUDIT.md',
     'BUILD_ID.txt',
     'global.json',
     'Directory.Build.props',
@@ -51,6 +52,11 @@ $required = @(
     'src\native\PowerScalerLabs.ProbeShared\PowerScalerProbeAbi.h',
     'src\native\PowerScalerLabs.NativeProbe\PowerScalerLabs.NativeProbe.vcxproj',
     'src\native\PowerScalerLabs.NativeProbe\dllmain.cpp',
+    'src\native\PowerScalerLabs.NativeProbe\WatchpointManager.cpp',
+    'src\native\PowerScalerLabs.NativeProbe\WatchpointManager.h',
+    'src\native\PowerScalerLabs.NativeProbe\ExceptionTracer.cpp',
+    'src\native\PowerScalerLabs.NativeProbe\ExceptionTracer.h',
+    'HP_WRITE_WATCHPOINT_GATE_AUDIT.md',
     'src\native\PowerScalerLabs.NativeProbe\ProbeEvents.cpp',
     'src\native\PowerScalerLabs.NativeProbe\ProbeEvents.h',
     'src\native\PowerScalerLabs.NativeProbe\ProbeWorker.cpp',
@@ -207,19 +213,26 @@ foreach ($token in @('WriteProcessMemory', 'VirtualAllocEx', 'CreateRemoteThread
 $nativeText = (Get-ChildItem -LiteralPath (Join-Path $root 'src\native\PowerScalerLabs.NativeProbe') -Recurse -File |
     Where-Object { $_.Extension -in @('.cpp', '.h') } |
     ForEach-Object { Read-Utf8Text -Path $_.FullName }) -join "`n"
-foreach ($required in @('TryCommitEvent', 'InterlockedCompareExchange64', 'command_event_count', 'Synthetic')) {
+foreach ($required in @(
+    'TryCommitEvent', 'InterlockedCompareExchange64', 'command_event_count', 'Synthetic',
+    'WatchpointManager', 'ExceptionTracer', 'AddVectoredExceptionHandler', 'RemoveVectoredExceptionHandler',
+    'EXCEPTION_SINGLE_STEP', 'CONTEXT_DEBUG_REGISTERS', 'CreateToolhelp32Snapshot', 'TH32CS_SNAPTHREAD',
+    'SuspendThread', 'GetThreadContext', 'SetThreadContext', 'ResumeThread', 'BuildDr0WriteControl',
+    'HardwareWriteTrap', 'EXCEPTION_CONTINUE_SEARCH', 'EXCEPTION_CONTINUE_EXECUTION'
+)) {
     if ($nativeText.IndexOf($required, [System.StringComparison]::Ordinal) -lt 0) {
         throw "Required native transport primitive is missing: $required"
     }
 }
-foreach ($forbidden in @(
-    'AddVectoredExceptionHandler', 'EXCEPTION_SINGLE_STEP', 'CONTEXT_DEBUG_REGISTERS',
-    'WatchpointManager', 'ArmWriteWatch', 'SuspendThread', 'SetThreadContext',
-    'Dr0', 'Dr1', 'Dr2', 'Dr3'
-)) {
+foreach ($forbidden in @('StackWalk64', 'RtlVirtualUnwind', 'AddVectoredContinueHandler', 'DebugActiveProcess', 'WriteProcessMemory')) {
     if ($nativeText.IndexOf($forbidden, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
         throw "Deferred instrumentation appeared in NativeProbe: $forbidden"
     }
+}
+if ($nativeText.IndexOf('context.Dr1 = target_address_', [System.StringComparison]::Ordinal) -ge 0 -or
+    $nativeText.IndexOf('context.Dr2 = target_address_', [System.StringComparison]::Ordinal) -ge 0 -or
+    $nativeText.IndexOf('context.Dr3 = target_address_', [System.StringComparison]::Ordinal) -ge 0) {
+    throw 'Only DR0 allocation is permitted in the HP write-watchpoint gate.'
 }
 
 $appText = (Get-ChildItem -LiteralPath (Join-Path $root 'src\PowerScalerLabs.App') -Recurse -Filter '*.cs' -File |
@@ -227,6 +240,30 @@ $appText = (Get-ChildItem -LiteralPath (Join-Path $root 'src\PowerScalerLabs.App
 foreach ($required in @('DrainCommittedEvents', 'ProbeHostMessage.ForEvent', 'CommandId', 'ShutdownAsync')) {
     if (($probeHostText + $appText + $probeProtocolText).IndexOf($required, [System.StringComparison]::Ordinal) -lt 0) {
         throw "Required managed transport primitive is missing: $required"
+    }
+}
+foreach ($required in @(
+    'arm_write_watch', 'disarm_watch', 'DescribeTrapContext', 'HpWriteTraceSession',
+    'RuntimeProtocol.CurrentHealthOffset', 'FighterLifetime', 'CorrelateFighter',
+    'HP trace stopped: selected fighter generation released.', 'HardwareWriteTrap'
+)) {
+    if (($probeHostText + $appText + $probeProtocolText).IndexOf($required, [System.StringComparison]::Ordinal) -lt 0) {
+        throw "HP write-watchpoint gate requirement is missing: $required"
+    }
+}
+foreach ($required in @(
+    'AppShutdownState',
+    'PerformShutdownCleanupAsync',
+    'Dispatcher.BeginInvoke',
+    'QueueDeadSessionCleanup',
+    'Interlocked.CompareExchange(ref _deadProcessCleanupQueued',
+    'DisposeDeadSessionLockedAsync',
+    'WaitForTransportSettlementAsync',
+    'TimedOutWithPendingAccounting',
+    'post-overflow-recovery'
+)) {
+    if (($probeHostText + $appText).IndexOf($required, [System.StringComparison]::Ordinal) -lt 0) {
+        throw "Closeout lifecycle/accounting fix is missing: $required"
     }
 }
 foreach ($retiredToken in @(
@@ -298,7 +335,7 @@ foreach ($match in $handlerMatches) {
     }
 }
 
-Write-Host 'PowerScaler Labs Native Causal Trace Transport Gate verification passed.'
+Write-Host 'PowerScaler Labs HP Write Watchpoint Gate verification passed.'
 Write-Host 'App: Fighters / Research / Findings / Diagnostics / Tools; legacy scanner-recording-candidate UI removed.'
 Write-Host 'Runtime: external read-only foundation retained, including fighter generations, targeted scanner primitive, chronology, provenance, and read budgets.'
-Write-Host 'Probe: ABI 2 correlated commands and synthetic MPSC transport; pre-watchpoint boundary enforced.'
+Write-Host 'Probe: ABI 2 DR0 write-watch observation, transactional thread coverage, VEH ownership, and MPSC transport.'

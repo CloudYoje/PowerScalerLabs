@@ -106,7 +106,7 @@ function Assert-X64Pe {
 }
 
 try {
-    Write-Log 'PowerScaler Labs Native Causal Trace Transport Gate publish started.'
+    Write-Log 'PowerScaler Labs HP Write Watchpoint Gate publish started.'
     $dotnetCommand = Get-Command dotnet -ErrorAction Stop
     $script:DotNetExe = $dotnetCommand.Source
     $script:MSBuildExe = Find-MSBuild
@@ -248,7 +248,7 @@ try {
 
     $sourceBuildId = (Get-Content -LiteralPath (Join-Path $root 'BUILD_ID.txt') -Raw).Trim()
     @(
-        'PowerScaler Labs - Native Causal Trace Transport Gate + HealthScale Companion 1',
+        'PowerScaler Labs - HP Write Watchpoint Gate + HealthScale Companion 1',
         "Build ID: $sourceBuildId",
         "Published: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
         "PowerScalerLabs.exe SHA-256: $appHash",
@@ -257,14 +257,14 @@ try {
         "PowerScalerLabs.NativeProbe.dll SHA-256: $probeDllHash",
         "HealthScale 1.1.1 xinput_other.dll SHA-256: $healthScaleDllHash",
         'Runtime boundary: provider-based external read-only access, fighter generations, provenance, and supporting chronology; no game-memory writes, hooks, or injection.',
-        'Probe boundary: explicit attachment and synthetic native-event transport only; gameplay instrumentation and writes are inactive.',
+        'Probe boundary: explicit attachment plus one generation-bound DR0 HP write observer; no gameplay writes or intervention.',
         'Companion boundary: HealthScale is independently built from frozen source and installed only through explicit fail-closed desktop-app actions.'
     ) | Set-Content -LiteralPath (Join-Path $artifacts 'BUILD_INFO.txt') -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $artifacts 'BUILD_ID.txt') -Value $sourceBuildId -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $probeArtifacts 'BUILD_ID.txt') -Value $sourceBuildId -Encoding UTF8
 
     Write-Log "Publish completed: $appExe"
-    Write-Log "Probe transport gate staged: $probeHostExe and $probeDll"
+    Write-Log "HP write-watchpoint gate staged: $probeHostExe and $probeDll"
     Write-Log "HealthScale companion payload staged: $healthScalePayloadDll"
     exit 0
 }

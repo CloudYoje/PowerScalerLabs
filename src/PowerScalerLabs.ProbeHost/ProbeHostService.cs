@@ -15,6 +15,7 @@ internal sealed class ProbeHostService : IDisposable
     private ProbeInjectionSession? _session;
     private CancellationTokenSource? _consumerStop;
     private Task? _consumerTask;
+    private int _deadProcessCleanupQueued;
     private ProbeState _state = ProbeState.Starting;
     private string _detail = "ProbeHost is starting.";
     private long _heartbeatSequence;
@@ -64,6 +65,8 @@ internal sealed class ProbeHostService : IDisposable
                 "attach" => Result(command, false, "Attach rejected: no DBXV2 PID was supplied."),
                 "detach" => await DetachAsync(command, cancellationToken).ConfigureAwait(false),
                 "emit_synthetic_event" => await EmitAsync(command, cancellationToken).ConfigureAwait(false),
+                "arm_write_watch" => await ArmWriteWatchAsync(command, cancellationToken).ConfigureAwait(false),
+                "disarm_watch" or "disarm_all" => await DisarmWatchAsync(command, cancellationToken).ConfigureAwait(false),
                 "ping" => Result(command, true, "ProbeHost is responsive."),
                 "shutdown" => await ShutdownAsync(command).ConfigureAwait(false),
                 _ => Result(command, false, $"Unknown probe command: {command.Command}")
@@ -101,6 +104,7 @@ internal sealed class ProbeHostService : IDisposable
 
             _session = candidate;
             candidate = null;
+            Volatile.Write(ref _deadProcessCleanupQueued, 0);
             StartConsumer(_session);
             SetState(ProbeState.Ready, "Native ABI handshake established; synthetic transport is ready.");
             return Result(command, true, _detail);
@@ -130,6 +134,53 @@ internal sealed class ProbeHostService : IDisposable
             _state, outcome.GeneratedEventCount, session.SharedMemory.DroppedEventCount);
     }
 
+    private async Task<ProbeCommandResult> ArmWriteWatchAsync(ProbeCommand command, CancellationToken cancellationToken)
+    {
+        ProbeInjectionSession? session = _session;
+        if (session is null || _state != ProbeState.Ready) return Result(command, false, "HP write watch rejected: probe is not ready.");
+        if (command.TraceSessionId is not ulong traceSessionId || command.WatchId is not ulong watchId ||
+            command.Address is not ulong address || address == 0 || command.Width != 4 || command.AccessType != ProbeAccessTypes.Write)
+            return Result(command, false, "HP write watch rejected: trace ID, watch ID, address, 4-byte width, and write access are required.");
+        if (!session.IsValidWatchAddress(address, 4))
+            return Result(command, false, "HP write watch rejected: target address is not a committed readable game page containing four bytes.");
+        NativeCommandOutcome outcome = await session.SharedMemory.ArmWriteWatchAsync(
+            traceSessionId, watchId, address, cancellationToken).ConfigureAwait(false);
+        bool success = outcome.ResultCode == 0;
+        string detail = success
+            ? $"HP write watch armed transactionally across {outcome.GeneratedEventCount} game thread(s)."
+            : DescribeInstrumentationFailure(outcome);
+        return new ProbeCommandResult(command.CommandId, command.Command, success, detail, _state,
+            outcome.GeneratedEventCount, session.SharedMemory.DroppedEventCount);
+    }
+
+    private async Task<ProbeCommandResult> DisarmWatchAsync(ProbeCommand command, CancellationToken cancellationToken)
+    {
+        ProbeInjectionSession? session = _session;
+        if (session is null) return Result(command, true, "No probe session is attached; no watch is active.");
+        NativeCommandOutcome outcome = await session.SharedMemory.DisarmWatchAsync(cancellationToken).ConfigureAwait(false);
+        bool success = outcome.ResultCode == 0;
+        if (!success) SetState(ProbeState.Faulted, DescribeInstrumentationFailure(outcome));
+        return new ProbeCommandResult(command.CommandId, command.Command, success,
+            success ? "HP write watch disarmed; original thread debug state restored." : _detail,
+            _state, outcome.GeneratedEventCount, session.SharedMemory.DroppedEventCount);
+    }
+
+    private static string DescribeInstrumentationFailure(NativeCommandOutcome outcome) => outcome.ResultCode switch
+    {
+        10 => "Invalid or already-active write-watch request.",
+        11 => "Cannot arm PowerScaler HP watch: VEH registration failed.",
+        12 => "Cannot arm PowerScaler HP watch: game-thread enumeration failed.",
+        13 => "Cannot arm PowerScaler HP watch: thread capacity was exceeded.",
+        14 => $"Cannot arm PowerScaler HP watch: thread {outcome.ResultDetail} could not be opened or suspended.",
+        15 => $"Cannot arm PowerScaler HP watch: GetThreadContext failed on thread {outcome.ResultDetail}.",
+        16 => $"Cannot arm PowerScaler HP watch: DR0 is already active on thread {outcome.ResultDetail}.",
+        17 => $"Cannot arm PowerScaler HP watch: SetThreadContext failed on thread {outcome.ResultDetail}.",
+        18 => "Cannot complete HP watch cleanup: VEH removal failed.",
+        19 => "Cannot arm PowerScaler HP watch: transactional rollback failed.",
+        20 => "Cannot disarm HP watch: external debug-register mutation was detected.",
+        _ => $"Native instrumentation failed with result {outcome.ResultCode}."
+    };
+
     private async Task<ProbeCommandResult> DetachAsync(ProbeCommand command, CancellationToken cancellationToken)
     {
         bool removed = await DetachCoreAsync(cancellationToken).ConfigureAwait(false);
@@ -139,7 +190,6 @@ internal sealed class ProbeHostService : IDisposable
     private async Task<ProbeCommandResult> ShutdownAsync(ProbeCommand command)
     {
         bool removed = await DetachCoreAsync(CancellationToken.None).ConfigureAwait(false);
-        if (removed) _shutdown.Cancel();
         return Result(command, removed, removed ? "ProbeHost shutdown authorized after confirmed module removal." : _detail);
     }
 
@@ -150,6 +200,12 @@ internal sealed class ProbeHostService : IDisposable
         {
             ProbeInjectionSession? session = _session;
             if (session is null) return true;
+            if (!session.IsGameAlive)
+            {
+                AnnounceDeadSessionCleanup();
+                await DisposeDeadSessionLockedAsync(session).ConfigureAwait(false);
+                return true;
+            }
             SetState(ProbeState.ShuttingDown, "Requesting native safe-to-unload state.");
             bool unloaded;
             try { unloaded = await session.ShutdownAndUnloadAsync(cancellationToken).ConfigureAwait(false); }
@@ -164,6 +220,12 @@ internal sealed class ProbeHostService : IDisposable
                 SetState(ProbeState.Faulted, "NativeProbe module removal was not proven; PID quarantined.");
                 return false;
             }
+            if (!session.IsGameAlive)
+            {
+                AnnounceDeadSessionCleanup();
+                await DisposeDeadSessionLockedAsync(session).ConfigureAwait(false);
+                return true;
+            }
             await StopConsumerAsync().ConfigureAwait(false);
             session.Dispose();
             _session = null;
@@ -171,6 +233,44 @@ internal sealed class ProbeHostService : IDisposable
             return true;
         }
         finally { _lifecycleGate.Release(); }
+    }
+
+    private void QueueDeadSessionCleanup(ProbeInjectionSession session)
+    {
+        if (Interlocked.CompareExchange(ref _deadProcessCleanupQueued, 1, 0) != 0)
+        {
+            return;
+        }
+        SetState(ProbeState.Faulted, "DBXV2 exited while a probe session was active; disposing the dead-process session.");
+        _ = Task.Run(async () =>
+        {
+            await _lifecycleGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (ReferenceEquals(_session, session) && !session.IsGameAlive)
+                {
+                    await DisposeDeadSessionLockedAsync(session).ConfigureAwait(false);
+                }
+            }
+            finally { _lifecycleGate.Release(); }
+        });
+    }
+
+    private void AnnounceDeadSessionCleanup()
+    {
+        if (Interlocked.CompareExchange(ref _deadProcessCleanupQueued, 1, 0) == 0)
+        {
+            SetState(ProbeState.Faulted, "DBXV2 exited while a probe session was active; disposing the dead-process session.");
+        }
+    }
+
+    private async Task DisposeDeadSessionLockedAsync(ProbeInjectionSession session)
+    {
+        if (!ReferenceEquals(_session, session)) return;
+        await StopConsumerAsync().ConfigureAwait(false);
+        _session = null;
+        session.Dispose();
+        SetState(ProbeState.Idle, "Dead DBXV2 probe session disposed.");
     }
 
     private static async Task<bool> RollbackCandidateAsync(ProbeInjectionSession session)
@@ -203,7 +303,9 @@ internal sealed class ProbeHostService : IDisposable
             foreach (ProbeEventMessage traceEvent in session.SharedMemory.DrainCommittedEvents())
             {
                 if (_events.Count >= MaximumBufferedEvents) _events.TryDequeue(out _);
-                _events.Enqueue(traceEvent);
+                _events.Enqueue(traceEvent.EventType == ProbeEventType.HardwareWriteTrap
+                    ? traceEvent with { Origin = session.DescribeTrapContext(traceEvent.TrapRip) }
+                    : traceEvent);
             }
         }
     }
@@ -235,9 +337,18 @@ internal sealed class ProbeHostService : IDisposable
         ProbeInjectionSession? session = _session;
         if (session is not null)
         {
-            session.SharedMemory.WriteHostHeartbeat();
-            if (!session.IsGameAlive) SetState(ProbeState.Faulted, "DBXV2 exited while a probe session was active.");
-            else if (_state == ProbeState.Ready && Stopwatch.GetTimestamp() - session.SharedMemory.ProbeHeartbeatQpc > Stopwatch.Frequency * 3)
+            if (!session.IsGameAlive)
+            {
+                QueueDeadSessionCleanup(session);
+                session = null;
+            }
+            else
+            {
+                session.SharedMemory.WriteHostHeartbeat();
+            }
+            if (session is not null && session.SharedMemory.State == ProbeSharedMemory.NativeState.Faulted && _state != ProbeState.Faulted)
+                SetState(ProbeState.Faulted, "NativeProbe reported an instrumentation fault; complete thread coverage was not retained.");
+            if (session is not null && _state == ProbeState.Ready && Stopwatch.GetTimestamp() - session.SharedMemory.ProbeHeartbeatQpc > Stopwatch.Frequency * 3)
                 SetState(ProbeState.Faulted, "Native probe heartbeat is stale; only synthetic transport was enabled.");
         }
         return new ProbeStatusMessage(ProbeProtocol.ProtocolVersion, ProbeProtocol.NativeAbiVersion, DateTimeOffset.UtcNow,

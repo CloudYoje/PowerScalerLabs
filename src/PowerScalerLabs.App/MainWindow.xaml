@@ -219,6 +219,15 @@
                     </Border>
                     <Border Grid.Row="1" Style="{StaticResource CardStyle}" Margin="0,0,0,8">
                         <StackPanel>
+                            <TextBlock Text="HP WRITE TRACE" FontWeight="Bold" />
+                            <WrapPanel Margin="0,6,0,4">
+                                <ComboBox x:Name="HpTraceFighterCombo" ItemsSource="{Binding FighterRows}" DisplayMemberPath="ActorAddressText" Width="210" SelectionChanged="HpTraceFighterCombo_SelectionChanged" />
+                                <Button x:Name="ArmHpTraceButton" Content="Arm HP Write Trace" Style="{StaticResource PrimaryButtonStyle}" Click="ArmHpTraceButton_Click" IsEnabled="False" />
+                                <Button x:Name="DisarmHpTraceButton" Content="Disarm" Style="{StaticResource SecondaryButtonStyle}" Click="DisarmHpTraceButton_Click" IsEnabled="False" />
+                            </WrapPanel>
+                            <TextBlock x:Name="HpTraceTargetText" Text="Select a live fighter generation. Target: Battle_Mob + 0x100." Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" />
+                            <TextBlock x:Name="HpTraceStateText" Text="Disarmed" FontWeight="SemiBold" Margin="0,4,0,8" />
+                            <TextBlock Text="SYNTHETIC TRANSPORT" FontWeight="Bold" />
                             <WrapPanel>
                                 <Button Content="Test Trace Transport" Style="{StaticResource PrimaryButtonStyle}" Click="TestTraceTransportButton_Click" />
                                 <Button Content="Run Sequential 25" Style="{StaticResource SecondaryButtonStyle}" Click="SequentialTraceButton_Click" />
@@ -227,6 +236,7 @@
                                 <Button Content="Export Transport Gate Report" Style="{StaticResource SecondaryButtonStyle}" Click="ExportTransportReportButton_Click" />
                             </WrapPanel>
                             <TextBlock x:Name="TransportMetricsText" Text="requested 0 · acknowledged 0 · received 0 · missing 0 · duplicate 0 · malformed 0 · dropped 0" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                            <TextBlock x:Name="TransportGateResultText" Text="LIVE TRANSPORT GATE · results are not persisted" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,5,0,0" />
                         </StackPanel>
                     </Border>
                     <DataGrid Grid.Row="2" ItemsSource="{Binding ProbeTraceRows}" Margin="0,0,0,8">
@@ -237,6 +247,9 @@
                             <DataGridTextColumn Header="Thread" Binding="{Binding NativeThread}" Width="75" />
                             <DataGridTextColumn Header="Trace session" Binding="{Binding TraceSession}" Width="*" />
                             <DataGridTextColumn Header="Watch ID" Binding="{Binding WatchId}" Width="110" />
+                            <DataGridTextColumn Header="Trap / code context" Binding="{Binding TrapLocation}" Width="2*" />
+                            <DataGridTextColumn Header="RCX fighter" Binding="{Binding RcxCorrelation}" Width="125" />
+                            <DataGridTextColumn Header="RDX fighter" Binding="{Binding RdxCorrelation}" Width="125" />
                         </DataGrid.Columns>
                     </DataGrid>
                     <Border Grid.Row="3" Style="{StaticResource CardStyle}" Margin="0,0,0,8">

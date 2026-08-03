@@ -34,10 +34,10 @@
     <Link><SubSystem>Windows</SubSystem><EnableCOMDATFolding>true</EnableCOMDATFolding><OptimizeReferences>true</OptimizeReferences><GenerateDebugInformation>true</GenerateDebugInformation></Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="dllmain.cpp" /><ClCompile Include="ProbeRuntime.cpp" /><ClCompile Include="ProbeSharedMemory.cpp" /><ClCompile Include="ProbeWorker.cpp" /><ClCompile Include="ProbeEvents.cpp" />
+    <ClCompile Include="dllmain.cpp" /><ClCompile Include="ProbeRuntime.cpp" /><ClCompile Include="ProbeSharedMemory.cpp" /><ClCompile Include="ProbeWorker.cpp" /><ClCompile Include="ProbeEvents.cpp" /><ClCompile Include="WatchpointManager.cpp" /><ClCompile Include="ExceptionTracer.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="ProbeRuntime.h" /><ClInclude Include="ProbeSharedMemory.h" /><ClInclude Include="ProbeWorker.h" /><ClInclude Include="ProbeEvents.h" /><ClInclude Include="..\PowerScalerLabs.ProbeShared\PowerScalerProbeAbi.h" />
+    <ClInclude Include="ProbeRuntime.h" /><ClInclude Include="ProbeSharedMemory.h" /><ClInclude Include="ProbeWorker.h" /><ClInclude Include="ProbeEvents.h" /><ClInclude Include="WatchpointManager.h" /><ClInclude Include="ExceptionTracer.h" /><ClInclude Include="..\PowerScalerLabs.ProbeShared\PowerScalerProbeAbi.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

@@ -25,7 +25,7 @@ internal static class ProbeArchitectureSelfTest
             output.WriteLine("- managed/native ABI dimensions are fixed");
             output.WriteLine("- probe protocol remains separate from Runtime protocol 8");
             output.WriteLine("- ABI 2 mailbox offsets and 256-slot event ring are fixed");
-            output.WriteLine("- no armed instrumentation state exists");
+            output.WriteLine("- instrumentation state remains separate from the Probe lifecycle enum");
             return 0;
         }
         catch (Exception exception)
