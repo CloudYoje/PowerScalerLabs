@@ -1,140 +1,100 @@
-# PowerScaler Labs — Native Causal Probe Foundation
+# PowerScaler Labs
 
-This checkpoint adds the isolated Native Causal Probe foundation while preserving the completed causal-research cleanup. The old broad snapshot/recording/candidate-ranking workflow remains retired.
+PowerScaler Labs is a Xenoverse 2 combat-stat and mechanical virtualization research
+system. Its long-term purpose is to represent canonical character power, including
+values in the quadrillions and beyond, without depending on Xenoverse's bounded
+float32 stat fields as authoritative state.
 
-The goal of this branch is smaller and more deliberate:
-
-```text
-PowerScaler Labs
-    ├─ Runtime
-    ├─ Fighters
-    ├─ Research
-    ├─ Findings
-    ├─ Diagnostics
-    └─ Tools
-```
-
-## What stays
-
-The useful runtime foundation remains intact:
-
-- external query/read-only DBXV2 access;
-- provider-based BattleCore resolution;
-- fail-closed provider conflict handling;
-- the 14-slot live `Battle_Mob` registry;
-- fighter slot generations to distinguish pointer reuse;
-- address provenance;
-- guarded reads and read-budget diagnostics;
-- known health anchors at `Battle_Mob + 0x100` and `+0x104`;
-- correlated Ki/stamina chronology anchors;
-- the isolated 25 ms chronology lane as **supporting temporal evidence**;
-- the low-level object scanner as an **internal targeted memory-inspection primitive**, not a primary user workflow;
-- HealthScale 1.1.1 as a sealed, separate companion under **Tools**.
-
-## What was removed from the app
-
-The following compiled app subsystems are removed:
-
-- `PowerScalerLabs.App/Overlay`;
-- `PowerScalerLabs.App/Recording`;
-- the guided F11 experiment overlay;
-- generic baseline/compare/full-snapshot controls;
-- generic start/stop recording sessions;
-- automatic candidate classification;
-- candidate signal tiers and noise ranking;
-- candidate promotion/rejection UI;
-- scanner-observation grids as a primary research surface.
-
-Git/source checkpoints are the archive for that retired research approach. The active application no longer carries both research philosophies at once.
-
-## Current application model
-
-### Fighters
-
-Displays the currently validated live fighter objects and their slot generations. A fighter address is treated as a live object address, **not** as durable character identity. Character/preset identity remains a later causal-research gate.
-
-### Research
-
-Chronology is shown here only as a timeline-support tool. The page is intentionally prepared for the next component:
+## Architectural objective
 
 ```text
-PowerScalerLabs.NativeProbe
-    ├─ data watchpoints
-    ├─ code breakpoints
-    ├─ register / XMM capture
-    ├─ call-stack capture
-    └─ bounded trace transport
+Exact canonical profile
+        -> virtual fighter state
+        -> deterministic combat kernel
+        -> bounded Xenoverse execution projection
+        -> animation, collision, AI, missions, and presentation
 ```
 
-The probe foundation is now included: explicit attach/detach, native ABI handshake, host/probe heartbeats, bounded transport storage, inert failure behavior, and verified unload. Hardware tracing and gameplay instrumentation are not included.
+Canonical values, combat-effective values, engine projection, and presentation are
+separate domains. Large canonical numbers are not written directly into Xenoverse
+resource fields. The game receives bounded values that preserve the outcome selected
+by PowerScaler's combat policy.
 
-### Findings
+## Current checkpoint
 
-Findings now means durable evidence, not a ranked candidate list. The initial table contains the known/correlated `Battle_Mob` resource anchors. Future code findings should progress through a causal evidence ladder such as:
+The repository currently provides:
+
+- external read-only DBXV2 observation;
+- structural BattleCore and fighter-lifetime discovery;
+- a 14-slot live `Battle_Mob` registry with generation identity;
+- address provenance, guarded reads, chronology, and read-budget diagnostics;
+- explicit ProbeHost/NativeProbe attachment and verified unload;
+- bounded native event transport;
+- transactional DR0 write observation with register and selected SIMD evidence;
+- controller-friendly HP research workflow and automatic disarm;
+- HealthScale 1.1.1 as a sealed independent companion.
+
+Current field evidence:
 
 ```text
-Observed
-  ↓
-Reproduced
-  ↓
-Code-anchored
-  ↓
-Causally validated
-  ↓
-Virtualization-ready
+Battle_Mob + 0x100  Current health       live verified
+Battle_Mob + 0x104  Maximum health       live verified
+Battle_Mob + 0x10C  Current Ki           source-backed candidate
+Battle_Mob + 0x16C  Current stamina      source-backed candidate
+Battle_Mob + 0x110  Maximum Ki           correlated hypothesis
+Battle_Mob + 0x170  Maximum stamina      correlated hypothesis
 ```
 
-### Diagnostics
+The HP writer trace proves a causal-research method. It does not mean full damage,
+resource, modifier, KO, revival, or stat virtualization is complete.
 
-Shows fighter lifetime events, known-field events, app logs, runtime state, access budgets, and chronology health. Broad scanner observations are intentionally not surfaced.
+## Safety boundary
 
-### Tools
+`PowerScalerLabs.Runtime` remains external and read-only. NativeProbe is an isolated
+research instrument. The current checkpoint does not authorize production stat,
+health, resource, or damage writes. HealthScale remains independently built and
+managed under Tools.
 
-HealthScale remains independently packaged and managed here. It is not merged into the PowerScaler runtime.
+## Next research
 
-## Runtime safety boundary
+Near-term work is to define exact canonical numeric and combat-event contracts,
+construct a deterministic offline combat-kernel simulator, validate Ki/stamina reads,
+and map Xenoverse's semantic damage pipeline. Production substitution comes only
+after replay evidence, fighter/context binding, restoration, and fail-closed behavior
+are proven.
 
-The managed PowerScaler Runtime remains external and read-only. Its observation layer continues to use query/read APIs and does not use game-memory writes, remote threads, hooks, or injection.
+## Build and launch
 
-The separate ProbeHost performs privileged attachment only after an explicit App command. NativeProbe currently provides lifecycle and transport infrastructure only; it installs no watchpoints or hooks and makes no gameplay writes.
-
-## Why the low-level scanner remains in the runtime
-
-The broad scanner workflow is retired, but `ObjectCapabilityScanner` is deliberately retained below the UI. Once causal tracing identifies a specific live object or structure, a bounded snapshot/compare operation can still be useful as a microscope for questions like:
-
-- which field differs between Goku and Vegeta;
-- which nearby field changes across presets;
-- which pointer child is stable for one live fighter instance.
-
-It is no longer intended to answer causal questions such as “which of thousands of changes was stamina spending?”
-
-## Build and launch on Windows
-
-Run:
+Run the existing local build:
 
 ```text
 START_HERE.cmd
 ```
 
-This launches the existing published app without rebuilding it. If no published app exists, it builds first. To force a complete verified rebuild before launch, run:
+Force a complete verified local rebuild:
 
 ```text
 START_HERE.cmd /build
 ```
 
-The Windows publisher runs the current architecture verifier, HealthScale integrity audit, Release builds, runtime and probe architecture self-tests, native transport tests, and publishes the app/runtime/companion artifacts. Historical milestone reports are not build inputs.
-
-Expected outputs:
+Expected local outputs:
 
 ```text
 artifacts\PowerScalerLabs\PowerScalerLabs.exe
 artifacts\PowerScalerLabs\Runtime\PowerScalerLabs.Runtime.exe
 artifacts\PowerScalerLabs\Probe\PowerScalerLabs.ProbeHost.exe
 artifacts\PowerScalerLabs\Probe\PowerScalerLabs.NativeProbe.dll
-artifacts\PowerScalerLabs\Companions\HealthScale\Payload\xinput_other.dll
-artifacts\PowerScalerLabs\Companions\HealthScale\Payload\HealthScale.ini
 ```
 
-## Architecture
+These commands create local artifacts. They do not publish or release the project
+publicly.
 
-The current research boundary and future mechanical-target model are defined in `docs\POWERSCALER_FULL_BATTLECORE_VIRTUALIZATION_ARCHITECTURE_2026-08-03.md`.
+## Documentation
+
+- `AGENTS.md`: binding instructions for Codex and coding agents.
+- `CODEX_HANDOFF.md`: current evidence, state, and immediate direction.
+- `docs/POWERSCALER_FULL_BATTLECORE_VIRTUALIZATION_ARCHITECTURE_2026-08-03.md`:
+  authoritative virtualization architecture.
+- `docs/XENOVERSE_2_ANATOMY_CASE_STUDY_2026-08-04.md`: game/content anatomy and
+  research provenance.
+

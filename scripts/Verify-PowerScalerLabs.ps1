@@ -12,6 +12,8 @@ function Read-Utf8Text {
 
 $root = Split-Path -Parent $PSScriptRoot
 $required = @(
+    'AGENTS.md',
+    'CODEX_HANDOFF.md',
     'PowerScalerLabs.sln',
     'README.md',
     'docs\POWERSCALER_FULL_BATTLECORE_VIRTUALIZATION_ARCHITECTURE_2026-08-03.md',
@@ -337,7 +339,7 @@ foreach ($match in $handlerMatches) {
     }
 }
 
-Write-Host 'PowerScaler Labs Mechanical Trace Trial Classification Gate verification passed.'
+Write-Host 'PowerScaler Labs Full BattleCore Virtualization Research Foundation verification passed.'
 Write-Host 'App: Fighters / Research / Findings / Diagnostics / Tools; legacy scanner-recording-candidate UI removed.'
 Write-Host 'Runtime: external read-only foundation retained, including fighter generations, targeted scanner primitive, chronology, provenance, and read budgets.'
 Write-Host 'Probe: ABI 3 DR0 write-watch observation, selected SIMD evidence, transactional thread coverage, VEH ownership, and MPSC transport.'
