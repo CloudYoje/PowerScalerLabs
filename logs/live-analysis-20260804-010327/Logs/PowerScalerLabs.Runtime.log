@@ -1,0 +1,61 @@
+[2026-08-04T00:18:48.1432626-05:00] PowerScaler Labs Capability Scanner runtime started. PID 1312.
+[2026-08-04T00:18:48.1619031-05:00] Waiting for PowerScaler Labs pipe connection.
+[2026-08-04T00:18:48.1664824-05:00] PowerScaler Labs connected to the Capability Scanner pipe.
+[2026-08-04T00:18:48.1881141-05:00] State=WaitingForGame; GamePid=none; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=0; ChronologyReads=0; Detail=Companion runtime is active. Waiting for DBXV2.exe.
+[2026-08-04T00:18:57.3333707-05:00] Attached read-only observer to DBXV2 PID 20872; process-instance=bbbb6e68fb6047df915bf5cd8ba4efda; version=1.25.02.0.
+[2026-08-04T00:18:57.3462258-05:00] State=WaitingForPatcher; GamePid=20872; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=0; ChronologyReads=0; Detail=No BattleCore provider produced a validated candidate.
+[2026-08-04T00:18:58.5276303-05:00] State=WaitingForBattleCore; GamePid=20872; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=1; ChronologyReads=0; Detail=The validated patcher storage RVA was readable but did not yield a nonzero root.
+[2026-08-04T00:23:20.6496478-05:00] State=WaitingForFighters; GamePid=20872; BattleCore=0x00000198A2CA00B0; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=xv2-patcher-structural-layout; ObserverReads=4832; ChronologyReads=0; Detail=BattleCore 0x00000198A2CA00B0 is stable through xv2-patcher-structural-layout. Waiting for fighter objects.
+[2026-08-04T00:23:38.5592432-05:00] State=ObservingFighters; GamePid=20872; BattleCore=0x00000198A2CA00B0; Fighters=1; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=xv2-patcher-structural-layout; ObserverReads=7401; ChronologyReads=0; Detail=Observing 1 validated fighter generation(s) through xv2-patcher-structural-layout.
+[2026-08-04T00:24:29.6013748-05:00] State=WaitingForFighters; GamePid=20872; BattleCore=0x00000198A2CA00B0; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=xv2-patcher-structural-layout; ObserverReads=17764; ChronologyReads=19572; Detail=BattleCore 0x00000198A2CA00B0 is stable through xv2-patcher-structural-layout. Waiting for fighter objects.
+[2026-08-04T00:24:30.4759386-05:00] State=WaitingForBattleCore; GamePid=20872; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=17780; ChronologyReads=19572; Detail=The patcher root produced no structurally valid BattleCore candidate.
+[2026-08-04T00:24:32.2297164-05:00] State=WaitingForGame; GamePid=none; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=0; ChronologyReads=19572; Detail=Companion runtime is active. Waiting for DBXV2.exe.
+[2026-08-04T00:24:34.9139513-05:00] Shutdown command received from PowerScaler Labs.
+[2026-08-04T00:24:34.9206479-05:00] PowerScaler Labs Capability Scanner runtime stopped normally.
+[2026-08-04T00:37:59.8241958-05:00] PowerScaler Labs Capability Scanner runtime started. PID 7536.
+[2026-08-04T00:37:59.8395158-05:00] Waiting for PowerScaler Labs pipe connection.
+[2026-08-04T00:37:59.8551104-05:00] PowerScaler Labs connected to the Capability Scanner pipe.
+[2026-08-04T00:37:59.8737724-05:00] State=WaitingForGame; GamePid=none; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=0; ChronologyReads=0; Detail=Companion runtime is active. Waiting for DBXV2.exe.
+[2026-08-04T00:38:19.2897998-05:00] Shutdown command received from PowerScaler Labs.
+[2026-08-04T00:38:19.2931247-05:00] PowerScaler Labs Capability Scanner runtime stopped normally.
+[2026-08-04T00:41:58.9570118-05:00] PowerScaler Labs Capability Scanner runtime started. PID 19896.
+[2026-08-04T00:41:58.9719427-05:00] Waiting for PowerScaler Labs pipe connection.
+[2026-08-04T00:41:58.9950941-05:00] PowerScaler Labs connected to the Capability Scanner pipe.
+[2026-08-04T00:41:59.0132637-05:00] State=WaitingForGame; GamePid=none; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=0; ChronologyReads=0; Detail=Companion runtime is active. Waiting for DBXV2.exe.
+[2026-08-04T00:42:44.7115723-05:00] Shutdown command received from PowerScaler Labs.
+[2026-08-04T00:42:44.7148158-05:00] PowerScaler Labs Capability Scanner runtime stopped normally.
+[2026-08-04T00:44:25.2554617-05:00] PowerScaler Labs Capability Scanner runtime started. PID 19224.
+[2026-08-04T00:44:25.2712293-05:00] Waiting for PowerScaler Labs pipe connection.
+[2026-08-04T00:44:25.2771403-05:00] PowerScaler Labs connected to the Capability Scanner pipe.
+[2026-08-04T00:44:25.2969743-05:00] State=WaitingForGame; GamePid=none; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=0; ChronologyReads=0; Detail=Companion runtime is active. Waiting for DBXV2.exe.
+[2026-08-04T00:46:36.9497737-05:00] PowerScaler Labs Capability Scanner runtime started. PID 9564.
+[2026-08-04T00:46:36.9650745-05:00] Waiting for PowerScaler Labs pipe connection.
+[2026-08-04T00:46:36.9661674-05:00] PowerScaler Labs connected to the Capability Scanner pipe.
+[2026-08-04T00:46:36.9868222-05:00] State=WaitingForGame; GamePid=none; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=0; ChronologyReads=0; Detail=Companion runtime is active. Waiting for DBXV2.exe.
+[2026-08-04T00:47:10.6971636-05:00] Shutdown command received from PowerScaler Labs.
+[2026-08-04T00:47:10.7005273-05:00] PowerScaler Labs Capability Scanner runtime stopped normally.
+[2026-08-04T00:47:32.3194275-05:00] PowerScaler Labs Capability Scanner runtime started. PID 14660.
+[2026-08-04T00:47:32.3332951-05:00] Waiting for PowerScaler Labs pipe connection.
+[2026-08-04T00:47:32.3385046-05:00] PowerScaler Labs connected to the Capability Scanner pipe.
+[2026-08-04T00:47:32.3576949-05:00] State=WaitingForGame; GamePid=none; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=0; ChronologyReads=0; Detail=Companion runtime is active. Waiting for DBXV2.exe.
+[2026-08-04T00:49:48.9471879-05:00] PowerScaler Labs Capability Scanner runtime started. PID 21764.
+[2026-08-04T00:49:48.9617709-05:00] Waiting for PowerScaler Labs pipe connection.
+[2026-08-04T00:49:48.9631896-05:00] PowerScaler Labs connected to the Capability Scanner pipe.
+[2026-08-04T00:49:48.9838183-05:00] State=WaitingForGame; GamePid=none; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=0; ChronologyReads=0; Detail=Companion runtime is active. Waiting for DBXV2.exe.
+[2026-08-04T00:50:23.7748905-05:00] Shutdown command received from PowerScaler Labs.
+[2026-08-04T00:50:23.7782012-05:00] PowerScaler Labs Capability Scanner runtime stopped normally.
+[2026-08-04T00:52:39.2951167-05:00] PowerScaler Labs Capability Scanner runtime started. PID 6616.
+[2026-08-04T00:52:39.3099201-05:00] Waiting for PowerScaler Labs pipe connection.
+[2026-08-04T00:52:39.3226276-05:00] PowerScaler Labs connected to the Capability Scanner pipe.
+[2026-08-04T00:52:39.3409324-05:00] State=WaitingForGame; GamePid=none; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=0; ChronologyReads=0; Detail=Companion runtime is active. Waiting for DBXV2.exe.
+[2026-08-04T00:55:00.4264958-05:00] PowerScaler Labs Capability Scanner runtime started. PID 3124.
+[2026-08-04T00:55:00.4395812-05:00] Waiting for PowerScaler Labs pipe connection.
+[2026-08-04T00:55:00.4490286-05:00] PowerScaler Labs connected to the Capability Scanner pipe.
+[2026-08-04T00:55:00.4684810-05:00] State=WaitingForGame; GamePid=none; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=0; ChronologyReads=0; Detail=Companion runtime is active. Waiting for DBXV2.exe.
+[2026-08-04T00:55:19.8169406-05:00] Attached read-only observer to DBXV2 PID 15536; process-instance=4437831ded4246988361d5f5539ff99a; version=1.25.02.0.
+[2026-08-04T00:55:19.8269813-05:00] State=WaitingForBattleCore; GamePid=15536; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=1; ChronologyReads=0; Detail=The validated patcher storage RVA was readable but did not yield a nonzero root.
+[2026-08-04T00:57:37.1717150-05:00] State=WaitingForFighters; GamePid=15536; BattleCore=0x000001B5BD014040; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=xv2-patcher-structural-layout; ObserverReads=2575; ChronologyReads=0; Detail=BattleCore 0x000001B5BD014040 is stable through xv2-patcher-structural-layout. Waiting for fighter objects.
+[2026-08-04T00:57:49.9405667-05:00] State=ObservingFighters; GamePid=15536; BattleCore=0x000001B5BD014040; Fighters=2; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=xv2-patcher-structural-layout; ObserverReads=4417; ChronologyReads=0; Detail=Observing 2 validated fighter generation(s) through xv2-patcher-structural-layout.
+[2026-08-04T01:03:06.3639529-05:00] State=WaitingForFighters; GamePid=15536; BattleCore=0x000001B5BD014040; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=xv2-patcher-structural-layout; ObserverReads=68503; ChronologyReads=121524; Detail=BattleCore 0x000001B5BD014040 is stable through xv2-patcher-structural-layout. Waiting for fighter objects.
+[2026-08-04T01:03:07.3478510-05:00] State=WaitingForBattleCore; GamePid=15536; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=68617; ChronologyReads=121524; Detail=The patcher root produced no structurally valid BattleCore candidate.
+[2026-08-04T01:03:09.4500604-05:00] State=WaitingForGame; GamePid=none; BattleCore=none; Fighters=0; Baseline=False; PendingScan=0; ChronologyActive=False; PendingChronology=0; Locator=none; ObserverReads=0; ChronologyReads=121524; Detail=Companion runtime is active. Waiting for DBXV2.exe.

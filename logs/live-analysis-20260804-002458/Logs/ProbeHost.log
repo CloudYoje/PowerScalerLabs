@@ -1,0 +1,16 @@
+[2026-08-04T00:18:47.3345367-05:00] [ProbeHost] Available; no probe is attached.
+[2026-08-04T00:18:47.3433621-05:00] [ProbeHost] ProbeHost started. PID 24416.
+[2026-08-04T00:18:47.3548320-05:00] [ProbeHost] Waiting for App pipe connection.
+[2026-08-04T00:18:47.3559051-05:00] [ProbeHost] App connected to ProbeHost.
+[2026-08-04T00:23:52.8773830-05:00] [ProbeHost] Validating DBXV2 PID 20872 and loading NativeProbe.
+[2026-08-04T00:23:52.9150341-05:00] [ProbeHost] DBXV2 PID 20872 architecture validated x64.
+[2026-08-04T00:23:52.9221832-05:00] [ProbeHost] Shared mapping created for session 59829DB624F3B652FE8648728F5BD474.
+[2026-08-04T00:23:53.1610071-05:00] [ProbeHost] NativeProbe LoadLibrary completed; resolving remote module by enumeration.
+[2026-08-04T00:23:53.1917409-05:00] [ProbeHost] PSL_Initialize invoked successfully.
+[2026-08-04T00:23:53.1922773-05:00] [ProbeHost] NativeProbe loaded; waiting for ABI handshake and heartbeat.
+[2026-08-04T00:23:53.4971391-05:00] [ProbeHost] Native ABI handshake established; synthetic transport is ready.
+[2026-08-04T00:24:26.4533801-05:00] [ProbeHost] Requesting native safe-to-unload state.
+[2026-08-04T00:24:26.5779876-05:00] [ProbeHost] Probe detached cleanly; module removal confirmed.
+[2026-08-04T00:24:34.9008875-05:00] [ProbeHost] Successful shutdown command result flushed; closing App pipe.
+[2026-08-04T00:24:34.9033729-05:00] [ProbeHost] App disconnected; immediately shutting down and unloading NativeProbe.
+[2026-08-04T00:24:34.9036374-05:00] [ProbeHost] ProbeHost stopped normally.

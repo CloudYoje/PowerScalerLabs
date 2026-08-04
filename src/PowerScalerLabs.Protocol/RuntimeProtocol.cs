@@ -150,9 +150,9 @@ public sealed record ChronologyConfiguration(
         [
             new("Battle_Mob", RuntimeProtocol.CurrentHealthOffset, ScannerValueType.Float32, "Current health", "Verified"),
             new("Battle_Mob", RuntimeProtocol.MaximumHealthOffset, ScannerValueType.Float32, "Maximum health", "Verified"),
-            new("Battle_Mob", RuntimeProtocol.CurrentKiOffset, ScannerValueType.Float32, "Current Ki candidate", "Correlated"),
+            new("Battle_Mob", RuntimeProtocol.CurrentKiOffset, ScannerValueType.Float32, "Current Ki source-backed candidate", "SourceBacked"),
             new("Battle_Mob", RuntimeProtocol.MaximumKiOffset, ScannerValueType.Float32, "Maximum Ki candidate", "Correlated"),
-            new("Battle_Mob", RuntimeProtocol.CurrentStaminaOffset, ScannerValueType.Float32, "Current stamina candidate", "Correlated"),
+            new("Battle_Mob", RuntimeProtocol.CurrentStaminaOffset, ScannerValueType.Float32, "Current stamina source-backed candidate", "SourceBacked"),
             new("Battle_Mob", RuntimeProtocol.MaximumStaminaOffset, ScannerValueType.Float32, "Maximum stamina candidate", "Correlated")
         ]);
 }

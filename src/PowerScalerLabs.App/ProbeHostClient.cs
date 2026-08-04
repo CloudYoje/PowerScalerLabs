@@ -74,9 +74,10 @@ internal sealed class ProbeHostClient : IDisposable
 
     internal ProbeCommand CreateCommand(string command, int? gameProcessId = null, ulong? traceSessionId = null,
         ulong? watchId = null, ulong? address = null, int? width = null, int? accessType = null,
-        int? eventCount = null, int? intervalMilliseconds = null) =>
+        int? eventCount = null, int? intervalMilliseconds = null, int? simdRegister0 = null,
+        int? simdRegister1 = null) =>
         new(Interlocked.Increment(ref _nextCommandId), command, gameProcessId, traceSessionId, watchId,
-            address, width, accessType, eventCount, intervalMilliseconds);
+            address, width, accessType, eventCount, intervalMilliseconds, simdRegister0, simdRegister1);
 
     internal async Task<ProbeCommandResult> ShutdownAsync(TimeSpan timeout)
     {

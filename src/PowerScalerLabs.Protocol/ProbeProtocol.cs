@@ -5,8 +5,8 @@ namespace PowerScalerLabs.Protocol;
 public static class ProbeProtocol
 {
     public const string PipeName = "PowerScalerLabs.ProbeHost.CausalResearchGate";
-    public const int ProtocolVersion = 2;
-    public const int NativeAbiVersion = 2;
+    public const int ProtocolVersion = 3;
+    public const int NativeAbiVersion = 3;
     public const int MaximumPendingCommands = 64;
     public const int MaximumEventBatch = 10_000;
 }
@@ -63,7 +63,14 @@ public sealed record ProbeStatusMessage(
     long DroppedNativeEventCount,
     int ActiveWatchpointCount,
     string? SessionId,
-    string BuildId);
+    string BuildId,
+    int EligibleThreadCount = 0,
+    int InstrumentedThreadCount = 0,
+    int ExitedThreadCount = 0,
+    int NewlyArmedThreadCount = 0,
+    int ConflictThreadCount = 0,
+    int NonOwnedChangeFlags = 0,
+    int NonOwnedChangeThreadId = 0);
 
 public sealed record ProbeCommand(
     long CommandId,
@@ -75,7 +82,9 @@ public sealed record ProbeCommand(
     int? Width = null,
     int? AccessType = null,
     int? EventCount = null,
-    int? EventIntervalMilliseconds = null);
+    int? EventIntervalMilliseconds = null,
+    int? SimdRegister0 = null,
+    int? SimdRegister1 = null);
 
 public sealed record ProbeCommandResult(
     long CommandId,
@@ -103,6 +112,10 @@ public sealed record ProbeEventMessage(
     ulong AccessAddress,
     int AccessWidth,
     int AccessType,
+    int SimdRegister0,
+    int SimdRegister1,
+    uint SimdScalarBits0,
+    uint SimdScalarBits1,
     string Origin);
 
 public sealed record ProbeHostMessage(

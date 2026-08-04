@@ -116,7 +116,13 @@ Run:
 START_HERE.cmd
 ```
 
-The Windows publisher now runs the cleanup verifier, HealthScale integrity audit, Release builds, the runtime architecture self-test, and publishes the app/runtime/companion artifacts.
+This launches the existing published app without rebuilding it. If no published app exists, it builds first. To force a complete verified rebuild before launch, run:
+
+```text
+START_HERE.cmd /build
+```
+
+The Windows publisher runs the current architecture verifier, HealthScale integrity audit, Release builds, runtime and probe architecture self-tests, native transport tests, and publishes the app/runtime/companion artifacts. Historical milestone reports are not build inputs.
 
 Expected outputs:
 
@@ -129,8 +135,6 @@ artifacts\PowerScalerLabs\Companions\HealthScale\Payload\xinput_other.dll
 artifacts\PowerScalerLabs\Companions\HealthScale\Payload\HealthScale.ini
 ```
 
-## Next implementation gate
+## Architecture
 
-After repeated attach/detach validation, the next gate is the real gameplay writer for one known `Battle_Mob + 0x100` current-health field using a hardware write watchpoint.
-
-See `NATIVE_CAUSAL_PROBE_FOUNDATION_AUDIT.md` for the new boundary and `CAUSAL_RESEARCH_CLEANUP_AUDIT.md` for the preserved cleanup boundary.
+The current research boundary and future mechanical-target model are defined in `docs\POWERSCALER_FULL_BATTLECORE_VIRTUALIZATION_ARCHITECTURE_2026-08-03.md`.

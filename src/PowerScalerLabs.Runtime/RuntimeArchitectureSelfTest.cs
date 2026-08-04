@@ -39,6 +39,21 @@ internal static class RuntimeArchitectureSelfTest
                     $"Focused offset +0x{offset:X} lacks provenance.");
             }
 
+            AddressProvenanceEntry currentKi = provenance.Single(entry =>
+                entry.Key == AddressProvenanceCatalog.CurrentKiKey);
+            AddressProvenanceEntry currentStamina = provenance.Single(entry =>
+                entry.Key == AddressProvenanceCatalog.CurrentStaminaKey);
+            AddressProvenanceEntry maximumKi = provenance.Single(entry =>
+                entry.Key == AddressProvenanceCatalog.MaximumKiKey);
+            AddressProvenanceEntry maximumStamina = provenance.Single(entry =>
+                entry.Key == AddressProvenanceCatalog.MaximumStaminaKey);
+            Require(currentKi.OffsetOrRva == 0x10C && currentKi.ValidationStage == "SourceBacked",
+                "Current Ki must remain a source-backed +0x10C candidate until live validation.");
+            Require(currentStamina.OffsetOrRva == 0x16C && currentStamina.ValidationStage == "SourceBacked",
+                "Current stamina must remain a source-backed +0x16C candidate until live validation.");
+            Require(maximumKi.ValidationStage == "Correlated" && maximumStamina.ValidationStage == "Correlated",
+                "Ki and stamina capacity candidates must not be promoted without live evidence.");
+
             HashSet<string> allowedImports = new(StringComparer.Ordinal)
             {
                 "OpenProcess",
@@ -75,6 +90,7 @@ internal static class RuntimeArchitectureSelfTest
             output.WriteLine("Runtime Access Architecture Gate 0 self-test passed.");
             output.WriteLine("- compressed 0.01 changes are observable");
             output.WriteLine("- address provenance registry is complete, unique, and version-gate free");
+            output.WriteLine("- current Ki/stamina are source-backed candidates; capacity fields remain correlated only");
             output.WriteLine("- native imports remain query/read/module-enumeration only");
             output.WriteLine("- fighter generation identity survives protocol serialization");
             return 0;

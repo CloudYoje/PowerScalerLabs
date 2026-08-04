@@ -40,6 +40,13 @@ public sealed class FighterRow : INotifyPropertyChanged
 
     public int Slot { get; }
     public string ActorAddressText => ActorAddress == 0 ? "—" : $"0x{ActorAddress:X16}";
+    public string TraceIdentityText => $"SLOT {Slot} · GENERATION {SlotGeneration}";
+    public string TraceBattleText => $"Battle instance {BattleInstanceId}";
+    public string HealthSummaryText => $"{CurrentHealth:N0} / {MaximumHealth:N0}";
+    public string HealthPercentText => $"{HealthPercent:P1}";
+    public string CurrentHealthAddressText => ActorAddress == 0
+        ? "—"
+        : $"0x{checked(ActorAddress + RuntimeProtocol.CurrentHealthOffset):X16}";
     public ulong ActorAddress { get => _actorAddress; private set => SetField(ref _actorAddress, value); }
     public float CurrentHealth { get => _currentHealth; private set => SetField(ref _currentHealth, value); }
     public float MaximumHealth { get => _maximumHealth; private set => SetField(ref _maximumHealth, value); }
@@ -65,6 +72,11 @@ public sealed class FighterRow : INotifyPropertyChanged
         IdentityKey = snapshot.Identity.IdentityKey;
         TimestampUtc = snapshot.TimestampUtc;
         OnPropertyChanged(nameof(ActorAddressText));
+        OnPropertyChanged(nameof(TraceIdentityText));
+        OnPropertyChanged(nameof(TraceBattleText));
+        OnPropertyChanged(nameof(HealthSummaryText));
+        OnPropertyChanged(nameof(HealthPercentText));
+        OnPropertyChanged(nameof(CurrentHealthAddressText));
         OnPropertyChanged(nameof(HealthPercent));
         OnPropertyChanged(nameof(IdentityShort));
         OnPropertyChanged(nameof(UpdatedText));

@@ -7,7 +7,7 @@ namespace psl::probe
 {
     inline constexpr std::uint32_t kSharedMagic = 0x50534C50;
     inline constexpr std::uint32_t kInitializationMagic = 0x49534C50;
-    inline constexpr std::uint32_t kAbiVersion = 2;
+    inline constexpr std::uint32_t kAbiVersion = 3;
     inline constexpr std::uint32_t kHeaderSize = 256;
     inline constexpr std::uint32_t kEventSize = 256;
     inline constexpr std::uint32_t kEventCapacity = 256;
@@ -80,7 +80,19 @@ namespace psl::probe
         std::uint32_t command_interval_milliseconds;
         std::uint32_t command_generated_event_count;
         std::uint32_t command_reserved;
-        std::uint32_t reserved[18];
+        std::uint32_t eligible_thread_count;
+        std::uint32_t instrumented_thread_count;
+        std::uint32_t exited_thread_count;
+        std::uint32_t newly_armed_thread_count;
+        std::uint32_t conflict_thread_count;
+        std::uint32_t conflict_component;
+        std::uint64_t conflict_expected_value;
+        std::uint64_t conflict_observed_value;
+        std::uint32_t non_owned_change_flags;
+        std::uint32_t non_owned_change_thread_id;
+        std::uint32_t command_simd_register_0;
+        std::uint32_t command_simd_register_1;
+        std::uint32_t reserved[4];
     };
 
     struct RawProbeEvent
@@ -103,7 +115,10 @@ namespace psl::probe
         std::uint32_t event_type;
         std::uint32_t access_width;
         std::uint32_t access_type;
-        std::uint8_t reserved[16];
+        std::uint32_t simd_register_0;
+        std::uint32_t simd_register_1;
+        std::uint32_t simd_scalar_bits_0;
+        std::uint32_t simd_scalar_bits_1;
     };
 
     struct ProbeSharedRegion
@@ -141,9 +156,14 @@ namespace psl::probe
     static_assert(offsetof(ProbeSharedHeader, command_event_count) == 168);
     static_assert(offsetof(ProbeSharedHeader, command_interval_milliseconds) == 172);
     static_assert(offsetof(ProbeSharedHeader, command_generated_event_count) == 176);
+    static_assert(offsetof(ProbeSharedHeader, eligible_thread_count) == 184);
+    static_assert(offsetof(ProbeSharedHeader, conflict_expected_value) == 208);
+    static_assert(offsetof(ProbeSharedHeader, non_owned_change_flags) == 224);
+    static_assert(offsetof(ProbeSharedHeader, command_simd_register_0) == 232);
     static_assert(offsetof(RawProbeEvent, commit_sequence) == 0);
     static_assert(offsetof(RawProbeEvent, sequence) == 8);
     static_assert(offsetof(RawProbeEvent, qpc) == 16);
     static_assert(offsetof(RawProbeEvent, registers) == 64);
     static_assert(offsetof(RawProbeEvent, thread_id) == 224);
+    static_assert(offsetof(RawProbeEvent, simd_register_0) == 240);
 }

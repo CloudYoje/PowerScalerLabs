@@ -106,7 +106,7 @@ function Assert-X64Pe {
 }
 
 try {
-    Write-Log 'PowerScaler Labs HP Write Watchpoint Gate publish started.'
+    Write-Log 'PowerScaler Labs In-Game Controller Research Workflow Gate publish started.'
     $dotnetCommand = Get-Command dotnet -ErrorAction Stop
     $script:DotNetExe = $dotnetCommand.Source
     $script:MSBuildExe = Find-MSBuild
@@ -230,9 +230,6 @@ try {
     Copy-CompanionDocument -Source (Join-Path $healthScaleSourceRoot 'FIX_REPORT.txt') -DestinationName 'FIX_REPORT.txt'
     Copy-CompanionDocument -Source (Join-Path $healthScaleSourceRoot 'VALIDATION_REPORT.txt') -DestinationName 'VALIDATION_REPORT.txt'
     Copy-CompanionDocument -Source (Join-Path $healthScaleSourceRoot 'QUEST_RUNTIME_TEST_PLAN.md') -DestinationName 'QUEST_RUNTIME_TEST_PLAN.md'
-    Copy-CompanionDocument -Source (Join-Path $root 'HEALTHSCALE_COMPANION_AUDIT.md') -DestinationName 'POWERSCALER_COMPANION_AUDIT.md'
-    Copy-CompanionDocument -Source (Join-Path $root 'HEALTHSCALE_COMPANION_TEST.md') -DestinationName 'POWERSCALER_COMPANION_TEST.md'
-
     $appHash = (Get-FileHash -LiteralPath $appExe -Algorithm SHA256).Hash.ToLowerInvariant()
     $runtimeHash = (Get-FileHash -LiteralPath $runtimeExe -Algorithm SHA256).Hash.ToLowerInvariant()
     $probeHostHash = (Get-FileHash -LiteralPath $probeHostExe -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -248,7 +245,7 @@ try {
 
     $sourceBuildId = (Get-Content -LiteralPath (Join-Path $root 'BUILD_ID.txt') -Raw).Trim()
     @(
-        'PowerScaler Labs - HP Write Watchpoint Gate + HealthScale Companion 1',
+        'PowerScaler Labs - In-Game Controller Research Workflow Gate + HealthScale Companion 1',
         "Build ID: $sourceBuildId",
         "Published: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
         "PowerScalerLabs.exe SHA-256: $appHash",
@@ -257,7 +254,7 @@ try {
         "PowerScalerLabs.NativeProbe.dll SHA-256: $probeDllHash",
         "HealthScale 1.1.1 xinput_other.dll SHA-256: $healthScaleDllHash",
         'Runtime boundary: provider-based external read-only access, fighter generations, provenance, and supporting chronology; no game-memory writes, hooks, or injection.',
-        'Probe boundary: explicit attachment plus one generation-bound DR0 HP write observer; no gameplay writes or intervention.',
+        'Probe boundary: explicit attachment plus one generation-bound DR0 write observer with two caller-selected SIMD scalar lanes; no gameplay writes or intervention.',
         'Companion boundary: HealthScale is independently built from frozen source and installed only through explicit fail-closed desktop-app actions.'
     ) | Set-Content -LiteralPath (Join-Path $artifacts 'BUILD_INFO.txt') -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $artifacts 'BUILD_ID.txt') -Value $sourceBuildId -Encoding UTF8

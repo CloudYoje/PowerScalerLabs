@@ -1,6 +1,7 @@
 <Window x:Class="PowerScalerLabs.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sys="clr-namespace:System;assembly=System.Runtime"
         Title="PowerScaler Labs — Native Causal Probe Foundation"
         Icon="Assets/PowerScaler.ico"
         Width="980"
@@ -192,14 +193,16 @@
                     </DataGrid>
                 </Grid>
 
-                <Grid x:Name="ResearchPage" Visibility="Collapsed">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="2*" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
+                <ScrollViewer x:Name="ResearchPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
                     <Border Style="{StaticResource CardStyle}" Margin="0,0,0,8">
                         <StackPanel>
                             <DockPanel>
@@ -220,26 +223,109 @@
                     <Border Grid.Row="1" Style="{StaticResource CardStyle}" Margin="0,0,0,8">
                         <StackPanel>
                             <TextBlock Text="HP WRITE TRACE" FontWeight="Bold" />
-                            <WrapPanel Margin="0,6,0,4">
-                                <ComboBox x:Name="HpTraceFighterCombo" ItemsSource="{Binding FighterRows}" DisplayMemberPath="ActorAddressText" Width="210" SelectionChanged="HpTraceFighterCombo_SelectionChanged" />
+                            <TextBlock Text="HP Writer Test  1. Identify the fighter whose HP will change.  2. Select it.  3. Verify live HP.  4. Run one normal synthetic test.  5. Arm.  6. Cause one light hit.  7. Wait 1–2 seconds.  8. Disarm."
+                                       Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,5,0,8" />
+                            <ListBox x:Name="HpTraceFighterList" ItemsSource="{Binding FighterRows}"
+                                     Style="{StaticResource TraceFighterListStyle}" ItemContainerStyle="{StaticResource TraceFighterItemStyle}"
+                                     SelectionMode="Single" SelectionChanged="HpTraceFighterList_SelectionChanged" MaxHeight="210">
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="82" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <TextBlock Grid.ColumnSpan="2" Text="✓ HP TRACE TARGET" Foreground="{StaticResource TraceTargetBorderBrush}" FontWeight="Bold" Margin="0,0,0,5">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding TraceIdentityText}" FontWeight="Bold" />
+                                            <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding TraceBattleText}" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,1,0,5" />
+                                            <TextBlock Grid.Row="3" Text="Actor" Foreground="{StaticResource SecondaryTextBrush}" />
+                                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding ActorAddressText}" FontFamily="Consolas" />
+                                            <TextBlock Grid.Row="4" Text="HP" Foreground="{StaticResource SecondaryTextBrush}" />
+                                            <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding HealthSummaryText}" FontWeight="SemiBold" />
+                                            <TextBlock Grid.Row="5" Text="Health" Foreground="{StaticResource SecondaryTextBrush}" />
+                                            <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding HealthPercentText}" />
+                                            <TextBlock Grid.Row="6" Text="HP address" Foreground="{StaticResource SecondaryTextBrush}" />
+                                            <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding CurrentHealthAddressText}" FontFamily="Consolas" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
+                                <TextBlock Text="Stimulus" Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <ComboBox x:Name="HpTraceStimulusCombo" SelectedIndex="0" MinWidth="190">
+                                    <sys:String>Basic attack</sys:String>
+                                    <sys:String>Strike skill</sys:String>
+                                    <sys:String>Ki blast skill</sys:String>
+                                    <sys:String>Ultimate attack</sys:String>
+                                    <sys:String>Environmental damage</sys:String>
+                                    <sys:String>Damage over time</sys:String>
+                                    <sys:String>Healing or recovery</sys:String>
+                                </ComboBox>
+                                <CheckBox x:Name="HpTraceAutoDisarmCheckBox" Content="Auto-disarm after damage"
+                                          IsChecked="True" VerticalAlignment="Center" Margin="14,0,0,0" />
+                            </StackPanel>
+                            <WrapPanel Margin="0,2,0,4">
                                 <Button x:Name="ArmHpTraceButton" Content="Arm HP Write Trace" Style="{StaticResource PrimaryButtonStyle}" Click="ArmHpTraceButton_Click" IsEnabled="False" />
                                 <Button x:Name="DisarmHpTraceButton" Content="Disarm" Style="{StaticResource SecondaryButtonStyle}" Click="DisarmHpTraceButton_Click" IsEnabled="False" />
                             </WrapPanel>
                             <TextBlock x:Name="HpTraceTargetText" Text="Select a live fighter generation. Target: Battle_Mob + 0x100." Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" />
                             <TextBlock x:Name="HpTraceStateText" Text="Disarmed" FontWeight="SemiBold" Margin="0,4,0,8" />
+                            <Border x:Name="HpTraceSummaryBanner" Background="{StaticResource TraceTargetBackgroundBrush}"
+                                    BorderBrush="{StaticResource TraceTargetBorderBrush}" BorderThickness="3" CornerRadius="6"
+                                    Padding="12" Margin="0,0,0,8" Visibility="Collapsed">
+                                <StackPanel>
+                                    <TextBlock x:Name="HpTraceBannerTitleText" Text="HP WRITE TRACE — ARMED" FontSize="16" FontWeight="Bold" />
+                                    <TextBlock x:Name="HpTraceBannerTargetText" Margin="0,6,0,0" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="HpTraceBannerHealthText" Margin="0,5,0,0" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="HpTraceBannerResultText" Margin="0,5,0,0" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                            <Border x:Name="HpTraceTrapBanner" Background="{StaticResource ReleasedTargetBackgroundBrush}"
+                                    BorderBrush="{StaticResource WarningBrush}" BorderThickness="2" CornerRadius="6"
+                                    Padding="10" Margin="0,0,0,8" Visibility="Collapsed">
+                                <StackPanel>
+                                    <TextBlock Text="HARDWARE WRITE TRAP CAPTURED" Foreground="{StaticResource WarningBrush}" FontWeight="Bold" />
+                                    <TextBlock x:Name="HpTraceTrapDetailText" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
                             <TextBlock Text="SYNTHETIC TRANSPORT" FontWeight="Bold" />
                             <WrapPanel>
-                                <Button Content="Test Trace Transport" Style="{StaticResource PrimaryButtonStyle}" Click="TestTraceTransportButton_Click" />
-                                <Button Content="Run Sequential 25" Style="{StaticResource SecondaryButtonStyle}" Click="SequentialTraceButton_Click" />
-                                <Button Content="Run Wraparound 512" Style="{StaticResource SecondaryButtonStyle}" Click="WraparoundTraceButton_Click" />
-                                <Button Content="Run Overflow 10000" Style="{StaticResource SecondaryButtonStyle}" Click="OverflowTraceButton_Click" />
+                                <Button x:Name="NormalTraceButton" Content="Test Trace Transport" Style="{StaticResource PrimaryButtonStyle}" Click="TestTraceTransportButton_Click" />
+                                <Button x:Name="SequentialTraceButton" Content="Run Sequential 25" Style="{StaticResource SecondaryButtonStyle}" Click="SequentialTraceButton_Click" />
+                                <Button x:Name="WraparoundTraceButton" Content="Run Wraparound 512" Style="{StaticResource SecondaryButtonStyle}" Click="WraparoundTraceButton_Click" />
+                                <Button x:Name="OverflowTraceButton" Content="Run Overflow 10000" Style="{StaticResource SecondaryButtonStyle}" Click="OverflowTraceButton_Click" />
                                 <Button Content="Export Transport Gate Report" Style="{StaticResource SecondaryButtonStyle}" Click="ExportTransportReportButton_Click" />
                             </WrapPanel>
                             <TextBlock x:Name="TransportMetricsText" Text="requested 0 · acknowledged 0 · received 0 · missing 0 · duplicate 0 · malformed 0 · dropped 0" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
                             <TextBlock x:Name="TransportGateResultText" Text="LIVE TRANSPORT GATE · results are not persisted" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,5,0,0" />
                         </StackPanel>
                     </Border>
-                    <DataGrid Grid.Row="2" ItemsSource="{Binding ProbeTraceRows}" Margin="0,0,0,8">
+                    <DataGrid Grid.Row="2" ItemsSource="{Binding ProbeTraceRows}" Height="300" Margin="0,0,0,8">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Sequence" Binding="{Binding Sequence}" Width="85" />
                             <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="90" />
@@ -266,7 +352,7 @@
                             </StackPanel>
                         </DockPanel>
                     </Border>
-                    <DataGrid Grid.Row="4" ItemsSource="{Binding ChronologyRows}">
+                    <DataGrid Grid.Row="4" ItemsSource="{Binding ChronologyRows}" Height="280">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="95" />
                             <DataGridTextColumn Header="Seq" Binding="{Binding Sequence}" Width="65" />
@@ -280,7 +366,8 @@
                             <DataGridTextColumn Header="Anchor" Binding="{Binding Label}" Width="*" />
                         </DataGrid.Columns>
                     </DataGrid>
-                </Grid>
+                    </Grid>
+                </ScrollViewer>
 
                 <Grid x:Name="FindingsPage" Visibility="Collapsed">
                     <Grid.RowDefinitions>

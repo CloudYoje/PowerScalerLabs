@@ -19,7 +19,7 @@ internal sealed class ProbeHostService : IDisposable
     private ProbeState _state = ProbeState.Starting;
     private string _detail = "ProbeHost is starting.";
     private long _heartbeatSequence;
-    private string _buildId = "PowerScaler Labs - Native Causal Trace Transport Gate - Runtime Protocol 8 - Probe Protocol 2 - Native ABI 2 - Pre-Watchpoint";
+    private string _buildId = "PowerScaler Labs - Generic Two-Lane SIMD Writer Evidence Gate - Runtime Protocol 8 - Probe Protocol 3 - Native ABI 3";
 
     internal async Task<int> RunAsync()
     {
@@ -139,12 +139,14 @@ internal sealed class ProbeHostService : IDisposable
         ProbeInjectionSession? session = _session;
         if (session is null || _state != ProbeState.Ready) return Result(command, false, "HP write watch rejected: probe is not ready.");
         if (command.TraceSessionId is not ulong traceSessionId || command.WatchId is not ulong watchId ||
-            command.Address is not ulong address || address == 0 || command.Width != 4 || command.AccessType != ProbeAccessTypes.Write)
-            return Result(command, false, "HP write watch rejected: trace ID, watch ID, address, 4-byte width, and write access are required.");
+            command.Address is not ulong address || address == 0 || command.Width != 4 || command.AccessType != ProbeAccessTypes.Write ||
+            command.SimdRegister0 is not int simdRegister0 || command.SimdRegister1 is not int simdRegister1 ||
+            simdRegister0 is < 0 or > 15 || simdRegister1 is < 0 or > 15 || simdRegister0 == simdRegister1)
+            return Result(command, false, "Write watch rejected: trace/watch IDs, address, write/4, and two distinct XMM selectors are required.");
         if (!session.IsValidWatchAddress(address, 4))
             return Result(command, false, "HP write watch rejected: target address is not a committed readable game page containing four bytes.");
         NativeCommandOutcome outcome = await session.SharedMemory.ArmWriteWatchAsync(
-            traceSessionId, watchId, address, cancellationToken).ConfigureAwait(false);
+            traceSessionId, watchId, address, simdRegister0, simdRegister1, cancellationToken).ConfigureAwait(false);
         bool success = outcome.ResultCode == 0;
         string detail = success
             ? $"HP write watch armed transactionally across {outcome.GeneratedEventCount} game thread(s)."
@@ -160,8 +162,12 @@ internal sealed class ProbeHostService : IDisposable
         NativeCommandOutcome outcome = await session.SharedMemory.DisarmWatchAsync(cancellationToken).ConfigureAwait(false);
         bool success = outcome.ResultCode == 0;
         if (!success) SetState(ProbeState.Faulted, DescribeInstrumentationFailure(outcome));
+        string successDetail = outcome.NonOwnedChangeFlags == 0
+            ? "HP write watch disarmed; PowerScaler-owned DR0 state was restored."
+            : $"HP write watch disarmed; PowerScaler-owned DR0 state was restored. Non-owned debug state changed on thread " +
+              $"{outcome.NonOwnedChangeThreadId} (flags 0x{outcome.NonOwnedChangeFlags:X}); it was preserved without failing the watch.";
         return new ProbeCommandResult(command.CommandId, command.Command, success,
-            success ? "HP write watch disarmed; original thread debug state restored." : _detail,
+            success ? successDetail : _detail,
             _state, outcome.GeneratedEventCount, session.SharedMemory.DroppedEventCount);
     }
 
@@ -177,7 +183,10 @@ internal sealed class ProbeHostService : IDisposable
         17 => $"Cannot arm PowerScaler HP watch: SetThreadContext failed on thread {outcome.ResultDetail}.",
         18 => "Cannot complete HP watch cleanup: VEH removal failed.",
         19 => "Cannot arm PowerScaler HP watch: transactional rollback failed.",
-        20 => "Cannot disarm HP watch: external debug-register mutation was detected.",
+        20 => $"Cannot disarm HP watch: thread {outcome.ResultDetail} changed PowerScaler-owned DR0 " +
+              $"(expected 0x{outcome.ExpectedOwnedValue:X16}, observed 0x{outcome.ObservedOwnedValue:X16}).",
+        21 => $"Cannot disarm HP watch: thread {outcome.ResultDetail} changed PowerScaler-owned DR7 bits " +
+              $"(expected 0x{outcome.ExpectedOwnedValue:X16}, observed 0x{outcome.ObservedOwnedValue:X16}).",
         _ => $"Native instrumentation failed with result {outcome.ResultCode}."
     };
 
@@ -355,7 +364,12 @@ internal sealed class ProbeHostService : IDisposable
             Stopwatch.GetTimestamp(), Stopwatch.Frequency, Environment.ProcessId, session?.GameProcess.Id, _state, _detail,
             session is not null, session is not null && session.SharedMemory.IsHandshakeValid(),
             Interlocked.Increment(ref _heartbeatSequence), session?.SharedMemory.ProbeHeartbeatQpc ?? 0,
-            session?.SharedMemory.DroppedEventCount ?? 0, 0, session?.SharedMemory.SessionId, _buildId);
+            session?.SharedMemory.DroppedEventCount ?? 0, session?.SharedMemory.ActiveWatchpointCount ?? 0,
+            session?.SharedMemory.SessionId, _buildId,
+            session?.SharedMemory.EligibleThreadCount ?? 0, session?.SharedMemory.InstrumentedThreadCount ?? 0,
+            session?.SharedMemory.ExitedThreadCount ?? 0, session?.SharedMemory.NewlyArmedThreadCount ?? 0,
+            session?.SharedMemory.ConflictThreadCount ?? 0, session?.SharedMemory.NonOwnedChangeFlags ?? 0,
+            session?.SharedMemory.NonOwnedChangeThreadId ?? 0);
     }
 
     private void SetState(ProbeState state, string detail) { _state = state; _detail = detail; ProbeLog.Write(detail); }

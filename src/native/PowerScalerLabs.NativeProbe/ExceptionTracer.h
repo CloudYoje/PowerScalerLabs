@@ -10,7 +10,8 @@ namespace psl::probe
     {
     public:
         bool Install(SharedMemoryContext& shared_memory) noexcept;
-        void Activate(std::uint64_t trace_session_id, std::uint64_t watch_id, std::uint64_t address) noexcept;
+        void Activate(std::uint64_t trace_session_id, std::uint64_t watch_id, std::uint64_t address,
+            std::uint32_t simd_register_0, std::uint32_t simd_register_1) noexcept;
         void Deactivate() noexcept;
         bool Remove() noexcept;
         bool IsInstalled() const noexcept;

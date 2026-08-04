@@ -1,1 +1,1 @@
-PowerScaler Labs - HP Write Watchpoint Gate - Runtime Protocol 8 - Probe Protocol 2 - Native ABI 2 - DR0 Observe Only
+PowerScaler Labs - In-Game Controller Research Workflow Gate - Runtime Protocol 8 - Probe Protocol 3 - Native ABI 3 - DR0 Observe Only

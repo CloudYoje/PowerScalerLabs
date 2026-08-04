@@ -1,0 +1,42 @@
+[2026-08-03T03:47:23.2690464-05:00] [ProbeHost] Available; no probe is attached.
+[2026-08-03T03:47:23.2769078-05:00] [ProbeHost] ProbeHost started. PID 20112.
+[2026-08-03T03:47:23.2904880-05:00] [ProbeHost] Waiting for App pipe connection.
+[2026-08-03T03:47:23.2963519-05:00] [ProbeHost] App connected to ProbeHost.
+[2026-08-03T03:56:56.4264128-05:00] [ProbeHost] Validating DBXV2 PID 20792 and loading NativeProbe.
+[2026-08-03T03:56:56.4594275-05:00] [ProbeHost] DBXV2 PID 20792 architecture validated x64.
+[2026-08-03T03:56:56.4618221-05:00] [ProbeHost] Shared mapping created for session 1C922C46F7812EB001B5C675D5E74C79.
+[2026-08-03T03:56:56.4970251-05:00] [ProbeHost] NativeProbe LoadLibrary completed; resolving remote module by enumeration.
+[2026-08-03T03:56:56.5274564-05:00] [ProbeHost] PSL_Initialize invoked successfully.
+[2026-08-03T03:56:56.5277960-05:00] [ProbeHost] NativeProbe loaded; waiting for ABI handshake and heartbeat.
+[2026-08-03T03:56:56.8305888-05:00] [ProbeHost] Native ABI handshake established; synthetic transport is ready.
+[2026-08-03T03:57:48.4325985-05:00] [ProbeHost] DBXV2 exited while a probe session was active; disposing the dead-process session.
+[2026-08-03T03:57:48.4797963-05:00] [ProbeHost] Dead DBXV2 probe session disposed.
+[2026-08-03T03:57:55.7619299-05:00] [ProbeHost] Successful shutdown command result flushed; closing App pipe.
+[2026-08-03T03:57:55.7645119-05:00] [ProbeHost] App disconnected; immediately shutting down and unloading NativeProbe.
+[2026-08-03T03:57:55.7647903-05:00] [ProbeHost] ProbeHost stopped normally.
+[2026-08-03T05:38:58.8718299-05:00] [ProbeHost] Available; no probe is attached.
+[2026-08-03T05:38:58.8789237-05:00] [ProbeHost] ProbeHost started. PID 20784.
+[2026-08-03T05:38:58.8856725-05:00] [ProbeHost] Waiting for App pipe connection.
+[2026-08-03T05:38:58.8867095-05:00] [ProbeHost] App connected to ProbeHost.
+[2026-08-03T05:44:19.0206804-05:00] [ProbeHost] Validating DBXV2 PID 24480 and loading NativeProbe.
+[2026-08-03T05:44:19.0523510-05:00] [ProbeHost] DBXV2 PID 24480 architecture validated x64.
+[2026-08-03T05:44:19.0552722-05:00] [ProbeHost] Shared mapping created for session CDFA6DCA3DA28E614C2F1C1B01CA289C.
+[2026-08-03T05:44:19.0892691-05:00] [ProbeHost] NativeProbe LoadLibrary completed; resolving remote module by enumeration.
+[2026-08-03T05:44:19.1186953-05:00] [ProbeHost] PSL_Initialize invoked successfully.
+[2026-08-03T05:44:19.1192073-05:00] [ProbeHost] NativeProbe loaded; waiting for ABI handshake and heartbeat.
+[2026-08-03T05:44:19.4215401-05:00] [ProbeHost] Native ABI handshake established; synthetic transport is ready.
+[2026-08-03T05:45:43.4435352-05:00] [ProbeHost] Requesting native safe-to-unload state.
+[2026-08-03T05:45:43.5352302-05:00] [ProbeHost] Probe detached cleanly; module removal confirmed.
+[2026-08-03T05:51:37.8964133-05:00] [ProbeHost] Available; no probe is attached.
+[2026-08-03T05:51:37.9035135-05:00] [ProbeHost] ProbeHost started. PID 24548.
+[2026-08-03T05:51:37.9098759-05:00] [ProbeHost] Waiting for App pipe connection.
+[2026-08-03T05:51:37.9194883-05:00] [ProbeHost] App connected to ProbeHost.
+[2026-08-03T06:02:19.0567336-05:00] [ProbeHost] Validating DBXV2 PID 23784 and loading NativeProbe.
+[2026-08-03T06:02:19.0896880-05:00] [ProbeHost] DBXV2 PID 23784 architecture validated x64.
+[2026-08-03T06:02:19.0926828-05:00] [ProbeHost] Shared mapping created for session ED8DCA5FACA9798CB1BD87B8269EBF0C.
+[2026-08-03T06:02:19.1272567-05:00] [ProbeHost] NativeProbe LoadLibrary completed; resolving remote module by enumeration.
+[2026-08-03T06:02:19.1571738-05:00] [ProbeHost] PSL_Initialize invoked successfully.
+[2026-08-03T06:02:19.1575891-05:00] [ProbeHost] NativeProbe loaded; waiting for ABI handshake and heartbeat.
+[2026-08-03T06:02:19.4592435-05:00] [ProbeHost] Native ABI handshake established; synthetic transport is ready.
+[2026-08-03T06:06:28.5519241-05:00] [ProbeHost] Requesting native safe-to-unload state.
+[2026-08-03T06:06:28.6607489-05:00] [ProbeHost] Probe detached cleanly; module removal confirmed.

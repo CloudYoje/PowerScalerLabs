@@ -9,6 +9,14 @@ namespace
     volatile LONG64 g_trace_session_id = 0;
     volatile LONG64 g_watch_id = 0;
     volatile LONG64 g_watched_address = 0;
+    volatile LONG g_simd_register_0 = 0;
+    volatile LONG g_simd_register_1 = 0;
+
+    std::uint32_t ReadScalarBits(const CONTEXT& context, const std::uint32_t index) noexcept
+    {
+        if (index >= 16) return 0;
+        return static_cast<std::uint32_t>(context.FltSave.XmmRegisters[index].Low);
+    }
 }
 
 namespace psl::probe
@@ -32,11 +40,14 @@ namespace psl::probe
     void ExceptionTracer::Activate(
         const std::uint64_t trace_session_id,
         const std::uint64_t watch_id,
-        const std::uint64_t address) noexcept
+        const std::uint64_t address, const std::uint32_t simd_register_0,
+        const std::uint32_t simd_register_1) noexcept
     {
         InterlockedExchange64(&g_trace_session_id, static_cast<LONG64>(trace_session_id));
         InterlockedExchange64(&g_watch_id, static_cast<LONG64>(watch_id));
         InterlockedExchange64(&g_watched_address, static_cast<LONG64>(address));
+        InterlockedExchange(&g_simd_register_0, static_cast<LONG>(simd_register_0));
+        InterlockedExchange(&g_simd_register_1, static_cast<LONG>(simd_register_1));
         MemoryBarrier();
         InterlockedExchange(&g_active, 1);
     }
@@ -117,6 +128,10 @@ namespace psl::probe
         event.event_type = static_cast<std::uint32_t>(NativeEventType::HardwareWriteTrap);
         event.access_width = 4;
         event.access_type = static_cast<std::uint32_t>(NativeAccessType::Write);
+        event.simd_register_0 = static_cast<std::uint32_t>(InterlockedCompareExchange(&g_simd_register_0, 0, 0));
+        event.simd_register_1 = static_cast<std::uint32_t>(InterlockedCompareExchange(&g_simd_register_1, 0, 0));
+        event.simd_scalar_bits_0 = ReadScalarBits(context, event.simd_register_0);
+        event.simd_scalar_bits_1 = ReadScalarBits(context, event.simd_register_1);
         TryCommitEvent(*g_shared_memory->region, g_shared_memory->event_ready, event);
         context.Dr6 = original_dr6 & ~1ULL;
         return EXCEPTION_CONTINUE_EXECUTION;

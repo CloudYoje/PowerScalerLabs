@@ -48,6 +48,18 @@ internal sealed class ProbeSharedMemory : IDisposable
         internal const long CommandIntervalMilliseconds = 172;
         internal const long CommandGeneratedEventCount = 176;
         internal const long CommandResultDetail = 180;
+        internal const long EligibleThreadCount = 184;
+        internal const long InstrumentedThreadCount = 188;
+        internal const long ExitedThreadCount = 192;
+        internal const long NewlyArmedThreadCount = 196;
+        internal const long ConflictThreadCount = 200;
+        internal const long ConflictComponent = 204;
+        internal const long ConflictExpectedValue = 208;
+        internal const long ConflictObservedValue = 216;
+        internal const long NonOwnedChangeFlags = 224;
+        internal const long NonOwnedChangeThreadId = 228;
+        internal const long CommandSimdRegister0 = 232;
+        internal const long CommandSimdRegister1 = 236;
     }
 
     internal enum NativeState : uint
@@ -107,6 +119,13 @@ internal sealed class ProbeSharedMemory : IDisposable
     internal long ProbeHeartbeatSequence => checked((long)ReadUInt64(Offset.ProbeHeartbeatSequence));
     internal long DroppedEventCount => checked((long)ReadUInt64(Offset.DroppedEventCount));
     internal int ActiveWatchpointCount => checked((int)ReadUInt32(Offset.ActiveWatchpointCount));
+    internal int EligibleThreadCount => checked((int)ReadUInt32(Offset.EligibleThreadCount));
+    internal int InstrumentedThreadCount => checked((int)ReadUInt32(Offset.InstrumentedThreadCount));
+    internal int ExitedThreadCount => checked((int)ReadUInt32(Offset.ExitedThreadCount));
+    internal int NewlyArmedThreadCount => checked((int)ReadUInt32(Offset.NewlyArmedThreadCount));
+    internal int ConflictThreadCount => checked((int)ReadUInt32(Offset.ConflictThreadCount));
+    internal int NonOwnedChangeFlags => checked((int)ReadUInt32(Offset.NonOwnedChangeFlags));
+    internal int NonOwnedChangeThreadId => checked((int)ReadUInt32(Offset.NonOwnedChangeThreadId));
     internal uint InitializationStatus => ReadUInt32(Offset.InitializationStatus);
 
     internal static ProbeSharedMemory Create(int gameProcessId)
@@ -147,19 +166,21 @@ internal sealed class ProbeSharedMemory : IDisposable
 
         return await ExecuteCommandAsync(2u, traceSessionId, watchId, 0, 0, 0,
             checked((uint)count), checked((uint)intervalMilliseconds),
-            TimeSpan.FromSeconds(Math.Max(10, count * intervalMilliseconds / 1000 + 10)), cancellationToken).ConfigureAwait(false);
+            0, 0, TimeSpan.FromSeconds(Math.Max(10, count * intervalMilliseconds / 1000 + 10)), cancellationToken).ConfigureAwait(false);
     }
 
     internal Task<NativeCommandOutcome> ArmWriteWatchAsync(
-        ulong traceSessionId, ulong watchId, ulong address, CancellationToken cancellationToken) =>
-        ExecuteCommandAsync(3u, traceSessionId, watchId, address, 4u, 1u, 0u, 0u, TimeSpan.FromSeconds(15), cancellationToken);
+        ulong traceSessionId, ulong watchId, ulong address, int simdRegister0, int simdRegister1,
+        CancellationToken cancellationToken) =>
+        ExecuteCommandAsync(3u, traceSessionId, watchId, address, 4u, 1u, 0u, 0u,
+            checked((uint)simdRegister0), checked((uint)simdRegister1), TimeSpan.FromSeconds(15), cancellationToken);
 
     internal Task<NativeCommandOutcome> DisarmWatchAsync(CancellationToken cancellationToken) =>
-        ExecuteCommandAsync(4u, 0, 0, 0, 0, 0, 0, 0, TimeSpan.FromSeconds(15), cancellationToken);
+        ExecuteCommandAsync(4u, 0, 0, 0, 0, 0, 0, 0, 0, 0, TimeSpan.FromSeconds(15), cancellationToken);
 
     private async Task<NativeCommandOutcome> ExecuteCommandAsync(uint command, ulong traceSessionId, ulong watchId,
-        ulong address, uint width, uint accessType, uint eventCount, uint intervalMilliseconds, TimeSpan commandTimeout,
-        CancellationToken cancellationToken)
+        ulong address, uint width, uint accessType, uint eventCount, uint intervalMilliseconds,
+        uint simdRegister0, uint simdRegister1, TimeSpan commandTimeout, CancellationToken cancellationToken)
     {
         await _commandGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -172,6 +193,8 @@ internal sealed class ProbeSharedMemory : IDisposable
             Write(Offset.CommandAccessType, accessType);
             Write(Offset.CommandEventCount, eventCount);
             Write(Offset.CommandIntervalMilliseconds, intervalMilliseconds);
+            Write(Offset.CommandSimdRegister0, command == 3u ? checked((uint)simdRegister0) : 0u);
+            Write(Offset.CommandSimdRegister1, command == 3u ? checked((uint)simdRegister1) : 0u);
             Write(Offset.CommandGeneratedEventCount, 0u);
             Write(Offset.CommandResultDetail, 0u);
             Write(Offset.CommandResultCode, uint.MaxValue);
@@ -184,7 +207,10 @@ internal sealed class ProbeSharedMemory : IDisposable
             {
                 if (ReadUInt64(Offset.CommandAckSequence) == sequence)
                     return new NativeCommandOutcome(ReadUInt32(Offset.CommandResultCode),
-                        checked((int)ReadUInt32(Offset.CommandGeneratedEventCount)), ReadUInt32(Offset.CommandResultDetail));
+                        checked((int)ReadUInt32(Offset.CommandGeneratedEventCount)), ReadUInt32(Offset.CommandResultDetail),
+                        ReadUInt32(Offset.ConflictComponent), ReadUInt64(Offset.ConflictExpectedValue),
+                        ReadUInt64(Offset.ConflictObservedValue), ReadUInt32(Offset.NonOwnedChangeFlags),
+                        ReadUInt32(Offset.NonOwnedChangeThreadId));
                 await Task.Delay(10, timeout.Token).ConfigureAwait(false);
             }
             throw new TimeoutException("Native command did not acknowledge within the bounded timeout.");
@@ -244,6 +270,10 @@ internal sealed class ProbeSharedMemory : IDisposable
             BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(216, 8)),
             checked((int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(232, 4))),
             checked((int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(236, 4))),
+            checked((int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(240, 4))),
+            checked((int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(244, 4))),
+            BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(248, 4)),
+            BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(252, 4)),
             "NativeProbe");
     }
 
@@ -274,7 +304,9 @@ internal sealed class ProbeSharedMemory : IDisposable
     }
 }
 
-internal readonly record struct NativeCommandOutcome(uint ResultCode, int GeneratedEventCount, uint ResultDetail);
+internal readonly record struct NativeCommandOutcome(
+    uint ResultCode, int GeneratedEventCount, uint ResultDetail, uint ConflictComponent,
+    ulong ExpectedOwnedValue, ulong ObservedOwnedValue, uint NonOwnedChangeFlags, uint NonOwnedChangeThreadId);
 
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 8)]
 internal struct ProbeInitializationArguments

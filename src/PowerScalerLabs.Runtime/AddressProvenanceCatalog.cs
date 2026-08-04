@@ -69,9 +69,11 @@ internal static class AddressProvenanceCatalog
             "A fighter is rejected unless the vtable is inside DBXV2.exe."),
         Resource(CurrentHealthKey, RuntimeProtocol.CurrentHealthOffset, "Current health", "Verified"),
         Resource(MaximumHealthKey, RuntimeProtocol.MaximumHealthOffset, "Maximum health", "Verified"),
-        Resource(CurrentKiKey, RuntimeProtocol.CurrentKiOffset, "Current Ki candidate", "Correlated"),
+        Resource(CurrentKiKey, RuntimeProtocol.CurrentKiOffset, "Current Ki source-backed candidate", "SourceBacked",
+            "XV2 Patcher game_defs.h identifies Battle_Mob::ki at +0x10C; PowerScaler still requires live behavioral confirmation."),
         Resource(MaximumKiKey, RuntimeProtocol.MaximumKiOffset, "Maximum Ki candidate", "Correlated"),
-        Resource(CurrentStaminaKey, RuntimeProtocol.CurrentStaminaOffset, "Current stamina candidate", "Correlated"),
+        Resource(CurrentStaminaKey, RuntimeProtocol.CurrentStaminaOffset, "Current stamina source-backed candidate", "SourceBacked",
+            "XV2 Patcher game_defs.h identifies Battle_Mob::stamina at +0x16C; PowerScaler still requires live behavioral confirmation."),
         Resource(MaximumStaminaKey, RuntimeProtocol.MaximumStaminaOffset, "Maximum stamina candidate", "Correlated")
     ];
 
@@ -86,7 +88,12 @@ internal static class AddressProvenanceCatalog
         _ => $"battle-mob.offset-0x{offset:X}"
     };
 
-    private static AddressProvenanceEntry Resource(string key, uint offset, string meaning, string stage) => new(
+    private static AddressProvenanceEntry Resource(
+        string key,
+        uint offset,
+        string meaning,
+        string stage,
+        string? evidence = null) => new(
         key,
         "Focused telemetry",
         "DBXV2.exe heap object",
@@ -96,7 +103,7 @@ internal static class AddressProvenanceCatalog
         ScannerValueType.Float32,
         4,
         meaning,
-        "Historical focused watchlist; semantics remain bounded by the stated validation stage.",
+        evidence ?? "Historical focused watchlist; semantics remain bounded by the stated validation stage.",
         "No hard version gate; every address must pass live structural validation.",
         FighterLayoutProviderId,
         stage,

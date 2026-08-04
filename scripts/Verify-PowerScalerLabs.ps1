@@ -14,8 +14,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $required = @(
     'PowerScalerLabs.sln',
     'README.md',
-    'CAUSAL_RESEARCH_CLEANUP_AUDIT.md',
-    'CAUSAL_TRANSPORT_GATE_CLOSEOUT_HOTFIX_AUDIT.md',
+    'docs\POWERSCALER_FULL_BATTLECORE_VIRTUALIZATION_ARCHITECTURE_2026-08-03.md',
     'BUILD_ID.txt',
     'global.json',
     'Directory.Build.props',
@@ -56,7 +55,6 @@ $required = @(
     'src\native\PowerScalerLabs.NativeProbe\WatchpointManager.h',
     'src\native\PowerScalerLabs.NativeProbe\ExceptionTracer.cpp',
     'src\native\PowerScalerLabs.NativeProbe\ExceptionTracer.h',
-    'HP_WRITE_WATCHPOINT_GATE_AUDIT.md',
     'src\native\PowerScalerLabs.NativeProbe\ProbeEvents.cpp',
     'src\native\PowerScalerLabs.NativeProbe\ProbeEvents.h',
     'src\native\PowerScalerLabs.NativeProbe\ProbeWorker.cpp',
@@ -67,8 +65,6 @@ $required = @(
     'src\native\PowerScalerLabs.NativeProbe\ProbeSharedMemory.h',
     'tests\native\PowerScalerLabs.NativeTransportTests.vcxproj',
     'tests\native\transport_tests.cpp',
-    'CAUSAL_TRACE_TRANSPORT_GATE_AUDIT.md',
-    'NATIVE_CAUSAL_PROBE_FOUNDATION_AUDIT.md',
     'src\PowerScalerLabs.App\Models\TelemetryViewModels.cs',
     'src\PowerScalerLabs.App\Companions\HealthScaleCompanionManager.cs',
     'src\PowerScalerLabs.App\Assets\PowerScaler.ico',
@@ -178,12 +174,14 @@ foreach ($token in @(
 $probeProtocolText = Read-Utf8Text -Path (Join-Path $root 'src\PowerScalerLabs.Protocol\ProbeProtocol.cs')
 foreach ($token in @(
     'PowerScalerLabs.ProbeHost.CausalResearchGate',
-    'ProtocolVersion = 2',
-    'NativeAbiVersion = 2',
+    'ProtocolVersion = 3',
+    'NativeAbiVersion = 3',
     'ProbeStatusMessage',
     'ProbeCommand',
     'ProbeHostMessage',
-    'ProbeCommandResult'
+    'ProbeCommandResult',
+    'SimdRegister0',
+    'SimdScalarBits0'
 )) {
     if ($probeProtocolText.IndexOf($token, [System.StringComparison]::Ordinal) -lt 0) {
         throw "Probe protocol invariant is missing: $token"
@@ -218,7 +216,8 @@ foreach ($required in @(
     'WatchpointManager', 'ExceptionTracer', 'AddVectoredExceptionHandler', 'RemoveVectoredExceptionHandler',
     'EXCEPTION_SINGLE_STEP', 'CONTEXT_DEBUG_REGISTERS', 'CreateToolhelp32Snapshot', 'TH32CS_SNAPTHREAD',
     'SuspendThread', 'GetThreadContext', 'SetThreadContext', 'ResumeThread', 'BuildDr0WriteControl',
-    'HardwareWriteTrap', 'EXCEPTION_CONTINUE_SEARCH', 'EXCEPTION_CONTINUE_EXECUTION'
+    'HardwareWriteTrap', 'EXCEPTION_CONTINUE_SEARCH', 'EXCEPTION_CONTINUE_EXECUTION',
+    'command_simd_register_0', 'simd_scalar_bits_0', 'ReadScalarBits'
 )) {
     if ($nativeText.IndexOf($required, [System.StringComparison]::Ordinal) -lt 0) {
         throw "Required native transport primitive is missing: $required"
@@ -245,7 +244,10 @@ foreach ($required in @('DrainCommittedEvents', 'ProbeHostMessage.ForEvent', 'Co
 foreach ($required in @(
     'arm_write_watch', 'disarm_watch', 'DescribeTrapContext', 'HpWriteTraceSession',
     'RuntimeProtocol.CurrentHealthOffset', 'FighterLifetime', 'CorrelateFighter',
-    'HP trace stopped: selected fighter generation released.', 'HardwareWriteTrap'
+    'HP trace stopped: selected fighter generation released.', 'HardwareWriteTrap',
+    'WriterEvidence', 'WRITER EVIDENCE SUMMARY', 'HpTraceStimulusCombo',
+    'HpTraceAutoDisarmCheckBox', 'AutoDisarmAfterDamageQuietPeriodAsync', 'Detected subtraction events',
+    'ControllerShortcutTimer_Tick', 'xinput1_4.dll', 'ControllerSafetyChord', 'CycleStimulus'
 )) {
     if (($probeHostText + $appText + $probeProtocolText).IndexOf($required, [System.StringComparison]::Ordinal) -lt 0) {
         throw "HP write-watchpoint gate requirement is missing: $required"
@@ -335,7 +337,7 @@ foreach ($match in $handlerMatches) {
     }
 }
 
-Write-Host 'PowerScaler Labs HP Write Watchpoint Gate verification passed.'
+Write-Host 'PowerScaler Labs Mechanical Trace Trial Classification Gate verification passed.'
 Write-Host 'App: Fighters / Research / Findings / Diagnostics / Tools; legacy scanner-recording-candidate UI removed.'
 Write-Host 'Runtime: external read-only foundation retained, including fighter generations, targeted scanner primitive, chronology, provenance, and read budgets.'
-Write-Host 'Probe: ABI 2 DR0 write-watch observation, transactional thread coverage, VEH ownership, and MPSC transport.'
+Write-Host 'Probe: ABI 3 DR0 write-watch observation, selected SIMD evidence, transactional thread coverage, VEH ownership, and MPSC transport.'

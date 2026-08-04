@@ -26,6 +26,22 @@ namespace
         WriteCounter(header.probe_heartbeat_qpc, static_cast<std::uint64_t>(now.QuadPart));
         WriteCounter(header.probe_heartbeat_sequence, ++sequence);
     }
+
+    void UpdateWatchpointMetrics(psl::probe::ProbeSharedHeader& header,
+        const psl::probe::WatchpointManager& watchpoints) noexcept
+    {
+        header.eligible_thread_count = watchpoints.EligibleThreadCount();
+        header.instrumented_thread_count = watchpoints.InstrumentedThreadCount();
+        header.exited_thread_count = watchpoints.ExitedThreadCount();
+        header.newly_armed_thread_count = watchpoints.NewlyArmedThreadCount();
+        header.conflict_thread_count = watchpoints.ConflictThreadCount();
+        header.command_reserved = watchpoints.FailureThreadId();
+        header.conflict_component = watchpoints.ConflictComponent();
+        header.conflict_expected_value = watchpoints.ExpectedOwnedValue();
+        header.conflict_observed_value = watchpoints.ObservedOwnedValue();
+        header.non_owned_change_flags = watchpoints.NonOwnedChangeFlags();
+        header.non_owned_change_thread_id = watchpoints.NonOwnedChangeThreadId();
+    }
 }
 
 namespace psl::probe
@@ -134,11 +150,12 @@ namespace psl::probe
                     std::uint32_t arm_result = 0;
                     const bool armed = watchpoints.Arm(*context, GetCurrentThreadId(),
                         header.command_trace_session_id, header.command_watch_id, header.command_target_address,
-                        header.command_width, header.command_access_type, arm_result);
+                        header.command_width, header.command_access_type, header.command_simd_register_0,
+                        header.command_simd_register_1, arm_result);
                     header.command_result_code = arm_result;
-                    header.command_reserved = watchpoints.FailureThreadId();
                     header.command_generated_event_count = watchpoints.InstrumentedThreadCount();
                     header.active_watchpoint_count = armed ? 1U : 0U;
+                    UpdateWatchpointMetrics(header, watchpoints);
                     WriteCounter(header.command_ack_sequence, command_sequence);
                     continue;
                 }
@@ -149,6 +166,7 @@ namespace psl::probe
                     header.command_result_code = disarm_result;
                     header.command_generated_event_count = watchpoints.InstrumentedThreadCount();
                     if (disarmed) header.active_watchpoint_count = 0;
+                    UpdateWatchpointMetrics(header, watchpoints);
                     WriteCounter(header.command_ack_sequence, command_sequence);
                     continue;
                 }
@@ -182,6 +200,7 @@ namespace psl::probe
                     WriteState(header, NativeState::Faulted);
                 }
                 header.command_generated_event_count = watchpoints.InstrumentedThreadCount();
+                UpdateWatchpointMetrics(header, watchpoints);
             }
 
             WaitForSingleObject(context->command_event, 250);

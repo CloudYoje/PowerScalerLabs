@@ -96,15 +96,28 @@ namespace
         require((configured & 1ULL) != 0, "DR0 local enable is missing");
         require(((configured >> 16) & 3ULL) == 1ULL, "DR0 access is not write-only");
         require(((configured >> 18) & 3ULL) == 3ULL, "DR0 length is not four bytes");
-        require((configured & ~kDr0ControlMask) == unrelated, "DR7 unrelated state was not preserved");
+        require((configured & ~kOwnedDr7Mask) == unrelated, "DR7 unrelated state was not preserved");
+        constexpr std::uint64_t externally_changed = configured | 0x0000000000100000ULL | 0x0000000000000004ULL;
+        constexpr std::uint64_t restored = RestoreDr0Control(externally_changed, unrelated);
+        require((restored & kOwnedDr7Mask) == (unrelated & kOwnedDr7Mask), "owned DR0 control was not restored");
+        require((restored & ~kOwnedDr7Mask) == (externally_changed & ~kOwnedDr7Mask),
+            "non-owned DR7 state was overwritten during restore");
+        require((kOwnedDr7Mask & 2ULL) == 0, "PowerScaler must not claim DR0 global enable ownership");
         RawProbeEvent event{};
         event.event_type = static_cast<std::uint32_t>(NativeEventType::HardwareWriteTrap);
         event.access_type = static_cast<std::uint32_t>(NativeAccessType::Write);
         event.access_width = 4;
         event.registers[2] = 0x1111;
         event.registers[3] = 0x2222;
+        event.simd_register_0 = 0;
+        event.simd_register_1 = 6;
+        event.simd_scalar_bits_0 = 0x3F800000;
+        event.simd_scalar_bits_1 = 0x40000000;
         require(sizeof(event) == kEventSize && event.access_width == 4 && event.registers[2] == 0x1111 &&
             event.registers[3] == 0x2222, "hardware trap ABI fixture mismatch");
+        require(offsetof(RawProbeEvent, simd_register_0) == 240 && event.simd_register_1 == 6 &&
+            event.simd_scalar_bits_0 == 0x3F800000 && event.simd_scalar_bits_1 == 0x40000000,
+            "selected SIMD evidence ABI fixture mismatch");
     }
 }
 

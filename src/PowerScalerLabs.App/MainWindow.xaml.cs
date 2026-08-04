@@ -5,12 +5,14 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using PowerScalerLabs.App.Companions;
 using PowerScalerLabs.App.Models;
 using PowerScalerLabs.Protocol;
@@ -19,6 +21,39 @@ namespace PowerScalerLabs.App;
 
 public partial class MainWindow : Window
 {
+    private const ushort ControllerDPadLeft = 0x0004;
+    private const ushort ControllerDPadRight = 0x0008;
+    private const ushort ControllerA = 0x1000;
+    private const ushort ControllerB = 0x2000;
+    private const ushort ControllerLeftThumb = 0x0040;
+    private const ushort ControllerRightThumb = 0x0080;
+    private const ushort ControllerSafetyChord = ControllerLeftThumb | ControllerRightThumb;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct XInputGamepad
+    {
+        internal ushort Buttons;
+        internal byte LeftTrigger;
+        internal byte RightTrigger;
+        internal short LeftThumbX;
+        internal short LeftThumbY;
+        internal short RightThumbX;
+        internal short RightThumbY;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct XInputState
+    {
+        internal uint PacketNumber;
+        internal XInputGamepad Gamepad;
+    }
+
+    private static class XInput
+    {
+        [DllImport("xinput1_4.dll", EntryPoint = "XInputGetState")]
+        internal static extern uint GetState(uint userIndex, out XInputState state);
+    }
+
     private enum AppShutdownState
     {
         Running,
@@ -68,7 +103,20 @@ public partial class MainWindow : Window
         string State,
         bool Success);
     private sealed record HpWriteTraceSession(ulong TraceSessionId, ulong WatchId, ulong ActorAddress, int Slot,
-        long SlotGeneration, long BattleInstanceId, string IdentityKey, ulong TargetAddress, uint TargetOffset, long StartedQpc);
+        long SlotGeneration, long BattleInstanceId, string IdentityKey, ulong TargetAddress, uint TargetOffset,
+        float CurrentHealthAtArm, float MaximumHealthAtArm, int InstrumentedThreadCount, long StartedQpc,
+        string Stimulus);
+    private sealed class WriterEvidence
+    {
+        internal required string Origin { get; init; }
+        internal required ulong TrapRip { get; init; }
+        internal int Count { get; set; }
+        internal uint FirstScalar0Bits { get; set; }
+        internal uint LastScalar0Bits { get; set; }
+        internal uint FirstScalar1Bits { get; set; }
+        internal uint LastScalar1Bits { get; set; }
+        internal Dictionary<uint, int> Scalar0BitCounts { get; } = [];
+    }
     private sealed class FighterLifetime
     {
         internal required ulong ActorAddress { get; init; }
@@ -81,13 +129,32 @@ public partial class MainWindow : Window
     }
     private readonly List<FighterLifetime> _fighterLifetimes = [];
     private HpWriteTraceSession? _hpTraceSession;
+    private HpWriteTraceSession? _lastHpTraceSession;
+    private string _hpTraceEndDetail = string.Empty;
+    private int _hpTraceCapturedEventCount;
+    private readonly Dictionary<string, WriterEvidence> _hpWriterEvidence = [];
+    private CancellationTokenSource? _hpAutoDisarmCancellation;
+    private float? _hpTraceLastDetectedHealth;
+    private int _hpTraceDetectedSubtractionCount;
+    private bool _hpTraceDisarmPending;
+    private bool _hpTraceSummaryWritten;
     private bool _probeReady;
     private long _nextTraceId = DateTime.UtcNow.Ticks;
+    private readonly DispatcherTimer _controllerShortcutTimer;
+    private ushort _previousControllerButtons;
 
     public MainWindow()
     {
         InitializeComponent();
         DataContext = this;
+
+        _controllerShortcutTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(80)
+        };
+        _controllerShortcutTimer.Tick += ControllerShortcutTimer_Tick;
+        _controllerShortcutTimer.Start();
+        Closed += (_, _) => _controllerShortcutTimer.Stop();
 
         string persistentRoot = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -107,6 +174,59 @@ public partial class MainWindow : Window
         AddLog("PowerScaler Labs Native Causal Probe Foundation started.");
         AddLog("Legacy guided overlay, generic recording, candidate ranking, and broad scanner UI are retired.");
         AddLog("The managed Runtime remains external/read-only; ProbeHost is a separate explicit-attach privilege lane.");
+        AddLog("Controller research controls active: hold L3+R3; D-pad left/right changes stimulus, A arms, B disarms.");
+    }
+
+    private void ControllerShortcutTimer_Tick(object? sender, EventArgs e)
+    {
+        XInputState state = default;
+        bool connected = false;
+        try
+        {
+            for (uint userIndex = 0; userIndex < 4; userIndex++)
+            {
+                if (XInput.GetState(userIndex, out state) == 0)
+                {
+                    connected = true;
+                    break;
+                }
+            }
+        }
+        catch (DllNotFoundException)
+        {
+            _controllerShortcutTimer.Stop();
+            AddLog("Controller research controls unavailable: xinput1_4.dll was not found.");
+            return;
+        }
+        if (!connected)
+        {
+            _previousControllerButtons = 0;
+            return;
+        }
+
+        ushort buttons = state.Gamepad.Buttons;
+        if ((buttons & ControllerSafetyChord) == ControllerSafetyChord)
+        {
+            if (Pressed(buttons, ControllerDPadLeft)) CycleStimulus(-1);
+            else if (Pressed(buttons, ControllerDPadRight)) CycleStimulus(1);
+            else if (Pressed(buttons, ControllerA) && ArmHpTraceButton.IsEnabled)
+                ArmHpTraceButton_Click(this, new RoutedEventArgs());
+            else if (Pressed(buttons, ControllerB) && DisarmHpTraceButton.IsEnabled)
+                _ = DisarmHpTraceAsync("HP write trace disarmed from controller.", "ControllerDisarm");
+        }
+        _previousControllerButtons = buttons;
+    }
+
+    private bool Pressed(ushort current, ushort button) =>
+        (current & button) != 0 && (_previousControllerButtons & button) == 0;
+
+    private void CycleStimulus(int direction)
+    {
+        int count = HpTraceStimulusCombo.Items.Count;
+        if (count == 0) return;
+        int current = Math.Max(0, HpTraceStimulusCombo.SelectedIndex);
+        HpTraceStimulusCombo.SelectedIndex = (current + direction + count) % count;
+        AddLog($"Controller selected stimulus: {HpTraceStimulusCombo.SelectedItem}.");
     }
 
     public ObservableCollection<FighterRow> FighterRows { get; } = [];
@@ -132,26 +252,26 @@ public partial class MainWindow : Window
         FindingRows.Add(new(
             "Current Ki",
             $"Battle_Mob + 0x{RuntimeProtocol.CurrentKiOffset:X}",
-            "Correlated",
-            "Retained as a chronology watch target; causal ownership is not yet proven.",
+            "Source-backed candidate",
+            "XV2 Patcher source identifies this current-value field; live spend/gain validation is still required.",
             "Research anchor"));
         FindingRows.Add(new(
             "Maximum Ki",
             $"Battle_Mob + 0x{RuntimeProtocol.MaximumKiOffset:X}",
-            "Correlated",
-            "Retained as a chronology watch target; causal ownership is not yet proven.",
+            "Correlated candidate",
+            "Retained as a chronology watch target; capacity semantics are not yet proven.",
             "Research anchor"));
         FindingRows.Add(new(
             "Current stamina",
             $"Battle_Mob + 0x{RuntimeProtocol.CurrentStaminaOffset:X}",
-            "Correlated",
-            "Retained as a chronology watch target; causal ownership is not yet proven.",
+            "Source-backed candidate",
+            "XV2 Patcher source identifies this current-value field; live spend/recovery validation is still required.",
             "Research anchor"));
         FindingRows.Add(new(
             "Maximum stamina",
             $"Battle_Mob + 0x{RuntimeProtocol.MaximumStaminaOffset:X}",
-            "Correlated",
-            "Retained as a chronology watch target; causal ownership is not yet proven.",
+            "Correlated candidate",
+            "Retained as a chronology watch target; capacity semantics are not yet proven.",
             "Research anchor"));
     }
 
@@ -394,6 +514,8 @@ public partial class MainWindow : Window
         }
         else
         {
+            if (_hpTraceSession is not null)
+                _ = DisarmHpTraceAsync("HP trace ended because DBXV2 exited.", "GameExited");
             _currentGameProcessId = null;
             DashboardGameStateText.Text = "Not detected";
             DashboardGameStateText.Foreground = (Brush)FindResource("WarningBrush");
@@ -499,28 +621,48 @@ public partial class MainWindow : Window
         ProbeIdentityText.Text =
             $"Host PID {message.HostProcessId} · Game PID {(message.GameProcessId?.ToString() ?? "—")} · ABI {message.NativeAbiVersion} · session {message.SessionId ?? "—"}";
         ProbeHeartbeatText.Text =
-            $"Host heartbeat {message.HeartbeatSequence:N0} · native QPC {message.NativeHeartbeatMonotonicTicks:N0} · dropped {message.DroppedNativeEventCount:N0} · watchpoints {message.ActiveWatchpointCount:N0}";
+            $"Host heartbeat {message.HeartbeatSequence:N0} · native QPC {message.NativeHeartbeatMonotonicTicks:N0} · dropped {message.DroppedNativeEventCount:N0} · " +
+            $"watchpoints {message.ActiveWatchpointCount:N0} · eligible {message.EligibleThreadCount:N0} · instrumented {message.InstrumentedThreadCount:N0} · " +
+            $"new {message.NewlyArmedThreadCount:N0} · exited {message.ExitedThreadCount:N0} · conflicts {message.ConflictThreadCount:N0}";
         AttachProbeButton.IsEnabled = message.State is ProbeState.Idle or ProbeState.Faulted && !message.ProbeDllLoaded;
         DetachProbeButton.IsEnabled = message.ProbeDllLoaded;
         _probeReady = message.State == ProbeState.Ready;
-        ArmHpTraceButton.IsEnabled = _probeReady && _hpTraceSession is null && HpTraceFighterCombo.SelectedItem is FighterRow;
-        DisarmHpTraceButton.IsEnabled = message.ActiveWatchpointCount > 0 || _hpTraceSession is not null;
-        if (_hpTraceSession is not null && message.ActiveWatchpointCount == 0 && message.State == ProbeState.Ready)
+        if (_hpTraceSession is not null && message.State is ProbeState.Faulted or ProbeState.Disconnected or ProbeState.Idle)
         {
-            HpTraceStateText.Text = "Disarmed by NativeProbe lifecycle or reconciliation.";
-            _hpTraceSession = null;
+            string reason = message.Detail.Contains("heartbeat", StringComparison.OrdinalIgnoreCase)
+                ? "HeartbeatLoss"
+                : message.State == ProbeState.Faulted ? "CoverageFault" : "ProbeDisconnected";
+            _ = DisarmHpTraceAsync($"HP trace ended because the probe entered {message.State}: {message.Detail}", reason);
         }
+        ArmHpTraceButton.IsEnabled = _probeReady && _hpTraceSession is null && HpTraceFighterList.SelectedItem is FighterRow;
+        DisarmHpTraceButton.IsEnabled = _probeReady || message.ActiveWatchpointCount > 0 || _hpTraceSession is not null;
+        SequentialTraceButton.IsEnabled = _hpTraceSession is null;
+        WraparoundTraceButton.IsEnabled = _hpTraceSession is null;
+        OverflowTraceButton.IsEnabled = _hpTraceSession is null;
+        UpdateHpTracePresentation();
     }
 
     private void ApplyProbeEvent(ProbeEventMessage traceEvent)
     {
         if (traceEvent.EventType == ProbeEventType.InstrumentationFault)
         {
-            _hpTraceSession = null;
             HpTraceStateText.Text = $"Trace fault: complete thread coverage was lost (native {traceEvent.Registers[0]} / cleanup {traceEvent.Registers[1]}).";
+            CompleteHpTraceSession(_hpTraceSession, "CoverageFault", false, HpTraceStateText.Text);
             ArmHpTraceButton.IsEnabled = false;
             DisarmHpTraceButton.IsEnabled = false;
             AddLog(HpTraceStateText.Text);
+        }
+        if (traceEvent.EventType == ProbeEventType.HardwareWriteTrap &&
+            _hpTraceSession is HpWriteTraceSession hpTrace &&
+            traceEvent.TraceSessionId == hpTrace.TraceSessionId && traceEvent.WatchId == hpTrace.WatchId)
+        {
+            _hpTraceCapturedEventCount++;
+            LogHardwareWriteTrap(traceEvent, hpTrace);
+            DetectHpSubtractionAndScheduleAutoDisarm(traceEvent, hpTrace);
+            HpTraceTrapBanner.Visibility = Visibility.Visible;
+            HpTraceTrapDetailText.Text =
+                $"Sequence {traceEvent.Sequence:N0} · QPC {traceEvent.MonotonicTicks:N0} · Thread {traceEvent.ThreadId:N0}\n" +
+                $"Watch {traceEvent.WatchId:N0} · Target Battle_Mob + 0x{hpTrace.TargetOffset:X}\n{traceEvent.Origin}";
         }
         if (traceEvent.ThreadId <= 0 || (traceEvent.EventType == ProbeEventType.Synthetic && traceEvent.Origin != "NativeProbe")) _transportMalformed++;
         if (!_transportSequences.Add(traceEvent.Sequence)) _transportDuplicates++;
@@ -536,6 +678,7 @@ public partial class MainWindow : Window
             traceEvent.EventType == ProbeEventType.HardwareWriteTrap ? traceEvent.Origin : "—", rcx, rdx));
         while (ProbeTraceRows.Count > 2_000) ProbeTraceRows.RemoveAt(0);
         UpdateTransportMetrics();
+        UpdateHpTracePresentation();
     }
 
     private void UpdateTransportMetrics() => TransportMetricsText.Text =
@@ -566,7 +709,9 @@ public partial class MainWindow : Window
             FighterRow row = _fighterBySlot[staleSlot];
             ReleaseFighterLifetime(row.IdentityKey, nowQpc);
             if (_hpTraceSession?.IdentityKey == row.IdentityKey)
-                _ = DisarmHpTraceAsync("HP trace stopped: selected fighter generation released.");
+                _ = DisarmHpTraceAsync(
+                    $"HP trace stopped: selected fighter generation released. Slot {row.Slot}, Generation {row.SlotGeneration}, Actor 0x{row.ActorAddress:X16}. Trace was automatically disarmed.",
+                    "TargetGenerationReleased");
             FighterRows.Remove(row);
             _fighterBySlot.Remove(staleSlot);
         }
@@ -584,7 +729,9 @@ public partial class MainWindow : Window
             {
                 ReleaseFighterLifetime(row.IdentityKey, nowQpc);
                 if (_hpTraceSession?.IdentityKey == row.IdentityKey)
-                    _ = DisarmHpTraceAsync("HP trace stopped: selected fighter generation released.");
+                    _ = DisarmHpTraceAsync(
+                        $"HP trace stopped: selected fighter generation released. Slot {row.Slot}, Generation {row.SlotGeneration}, Actor 0x{row.ActorAddress:X16}. Trace was automatically disarmed.",
+                        "TargetGenerationReleased");
             }
             if (_fighterLifetimes.All(lifetime => lifetime.IdentityKey != fighter.Identity.IdentityKey))
                 _fighterLifetimes.Add(new FighterLifetime
@@ -595,6 +742,7 @@ public partial class MainWindow : Window
                 });
             row.Update(fighter);
         }
+        UpdateHpTracePresentation();
     }
 
     private void ReleaseFighterLifetime(string identityKey, long releasedQpc)
@@ -711,6 +859,8 @@ public partial class MainWindow : Window
 
     private void SetDisconnectedState(string state, string detail)
     {
+        if (_hpTraceSession is not null)
+            _ = DisarmHpTraceAsync($"HP trace ended because passive Runtime disconnected: {detail}", "RuntimeDisconnected");
         Brush warning = (Brush)FindResource("WarningBrush");
         HeaderRuntimeStateText.Text = state;
         HeaderRuntimeStateText.Foreground = warning;
@@ -792,11 +942,11 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ShowPage(Grid page, Button selectedButton, string title, string subtitle)
+    private void ShowPage(FrameworkElement page, Button selectedButton, string title, string subtitle)
     {
-        Grid[] pages = [DashboardPage, RuntimePage, FightersPage, ResearchPage, FindingsPage, LogsPage, ToolsPage];
+        FrameworkElement[] pages = [DashboardPage, RuntimePage, FightersPage, ResearchPage, FindingsPage, LogsPage, ToolsPage];
         Button[] buttons = [DashboardNavButton, RuntimeNavButton, FightersNavButton, ResearchNavButton, FindingsNavButton, LogsNavButton, ToolsNavButton];
-        foreach (Grid candidatePage in pages)
+        foreach (FrameworkElement candidatePage in pages)
         {
             candidatePage.Visibility = candidatePage == page ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -885,67 +1035,330 @@ public partial class MainWindow : Window
         AddLog(result.Success ? "Probe detach and module removal confirmed." : $"Probe detach unresolved: {result.Detail}");
     }
 
-    private void HpTraceFighterCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void HpTraceFighterList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (HpTraceFighterCombo.SelectedItem is FighterRow fighter)
+        if (_hpTraceSession is not null)
         {
-            ulong target = checked(fighter.ActorAddress + RuntimeProtocol.CurrentHealthOffset);
-            HpTraceTargetText.Text = $"Slot {fighter.Slot} · Generation {fighter.SlotGeneration} · Battle {fighter.BattleInstanceId} · " +
-                $"Actor 0x{fighter.ActorAddress:X16} · Battle_Mob + 0x{RuntimeProtocol.CurrentHealthOffset:X} = 0x{target:X16}";
+            HpTraceFighterList.SelectedItem = _fighterBySlot.TryGetValue(_hpTraceSession.Slot, out FighterRow? armedRow) &&
+                armedRow.IdentityKey == _hpTraceSession.IdentityKey ? armedRow : null;
+            return;
         }
-        else HpTraceTargetText.Text = $"Select a live fighter generation. Target: Battle_Mob + 0x{RuntimeProtocol.CurrentHealthOffset:X}.";
-        ArmHpTraceButton.IsEnabled = _probeReady && _hpTraceSession is null && HpTraceFighterCombo.SelectedItem is FighterRow;
+        UpdateHpTracePresentation();
     }
 
     private async void ArmHpTraceButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!_probeReady || HpTraceFighterCombo.SelectedItem is not FighterRow selected ||
+        if (!_probeReady || HpTraceFighterList.SelectedItem is not FighterRow selected ||
             !_fighterBySlot.TryGetValue(selected.Slot, out FighterRow? live) || live.IdentityKey != selected.IdentityKey)
         {
             HpTraceStateText.Text = "Arm rejected: select a currently live fighter generation while Probe is Ready.";
             return;
         }
+        if (!float.IsFinite(live.CurrentHealth) || !float.IsFinite(live.MaximumHealth) || live.MaximumHealth <= 0)
+        {
+            HpTraceStateText.Text = "Arm rejected: validated HP evidence is unavailable for the selected fighter generation.";
+            AddLog(HpTraceStateText.Text);
+            return;
+        }
         ulong traceSessionId = unchecked((ulong)Interlocked.Increment(ref _nextTraceId));
         ulong watchId = unchecked((ulong)Interlocked.Increment(ref _nextTraceId));
         ulong targetAddress = checked(selected.ActorAddress + RuntimeProtocol.CurrentHealthOffset);
-        HpWriteTraceSession trace = new(traceSessionId, watchId, selected.ActorAddress, selected.Slot,
+        string stimulus = HpTraceStimulusCombo.SelectedItem?.ToString() ?? "Unspecified";
+        HpWriteTraceSession pendingTrace = new(traceSessionId, watchId, selected.ActorAddress, selected.Slot,
             selected.SlotGeneration, selected.BattleInstanceId, selected.IdentityKey, targetAddress,
-            RuntimeProtocol.CurrentHealthOffset, Stopwatch.GetTimestamp());
+            RuntimeProtocol.CurrentHealthOffset, selected.CurrentHealth, selected.MaximumHealth, 0,
+            Stopwatch.GetTimestamp(), stimulus);
         ProbeCommand command = _probeClient.CreateCommand("arm_write_watch", traceSessionId: traceSessionId,
-            watchId: watchId, address: targetAddress, width: 4, accessType: ProbeAccessTypes.Write);
+            watchId: watchId, address: targetAddress, width: 4, accessType: ProbeAccessTypes.Write,
+            simdRegister0: 0, simdRegister1: 6);
         ProbeCommandResult result = await _probeClient.SendAsync(command, TimeSpan.FromSeconds(20)).ConfigureAwait(true);
         if (result.Success)
         {
+            HpWriteTraceSession trace = pendingTrace with { InstrumentedThreadCount = result.GeneratedEventCount };
             _hpTraceSession = trace;
+            _lastHpTraceSession = trace;
+            _hpTraceEndDetail = string.Empty;
+            _hpTraceCapturedEventCount = 0;
+            _hpWriterEvidence.Clear();
+            _hpTraceLastDetectedHealth = trace.CurrentHealthAtArm;
+            _hpTraceDetectedSubtractionCount = 0;
+            CancelHpAutoDisarm();
+            _hpTraceSummaryWritten = false;
+            HpTraceTrapBanner.Visibility = Visibility.Collapsed;
             HpTraceStateText.Text = $"Armed · DR0 write/4 · {result.GeneratedEventCount} threads · trace {traceSessionId} · watch {watchId}";
             ArmHpTraceButton.IsEnabled = false;
             DisarmHpTraceButton.IsEnabled = true;
+            HpTraceFighterList.IsEnabled = false;
+            NormalTraceButton.IsEnabled = false;
+            SequentialTraceButton.IsEnabled = false;
+            WraparoundTraceButton.IsEnabled = false;
+            OverflowTraceButton.IsEnabled = false;
         }
         else HpTraceStateText.Text = $"Arm failed: {result.Detail}";
         AddLog(HpTraceStateText.Text);
+        if (result.Success) LogHpTraceArmed(_hpTraceSession!);
+        UpdateHpTracePresentation();
     }
 
     private async void DisarmHpTraceButton_Click(object sender, RoutedEventArgs e) =>
-        await DisarmHpTraceAsync("HP write trace disarmed by user.").ConfigureAwait(true);
+        await DisarmHpTraceAsync("HP write trace disarmed by user.", "ManualDisarm").ConfigureAwait(true);
 
-    private async Task DisarmHpTraceAsync(string successDetail)
+    private async Task DisarmHpTraceAsync(string successDetail, string endReason = "AutomaticDisarm")
     {
-        if (_hpTraceSession is null && (_lastProbeStatus?.ActiveWatchpointCount ?? 0) == 0) return;
+        if (_hpTraceDisarmPending || (!_probeReady && _hpTraceSession is null && (_lastProbeStatus?.ActiveWatchpointCount ?? 0) == 0)) return;
+        _hpTraceDisarmPending = true;
+        HpWriteTraceSession? endingTrace = _hpTraceSession;
         ProbeCommandResult result = await _probeClient.SendAsync(
             _probeClient.CreateCommand("disarm_watch"), TimeSpan.FromSeconds(15)).ConfigureAwait(true);
         if (result.Success)
         {
-            _hpTraceSession = null;
+            CompleteHpTraceSession(endingTrace, endReason, true, result.Detail);
             HpTraceStateText.Text = successDetail;
-            ArmHpTraceButton.IsEnabled = _probeReady && HpTraceFighterCombo.SelectedItem is FighterRow;
+            ArmHpTraceButton.IsEnabled = _probeReady && HpTraceFighterList.SelectedItem is FighterRow;
             DisarmHpTraceButton.IsEnabled = false;
+            HpTraceFighterList.IsEnabled = true;
+            NormalTraceButton.IsEnabled = true;
+            SequentialTraceButton.IsEnabled = true;
+            WraparoundTraceButton.IsEnabled = true;
+            OverflowTraceButton.IsEnabled = true;
         }
         else
         {
             HpTraceStateText.Text = $"Disarm failed; safe cleanup requested: {result.Detail}";
+            CompleteHpTraceSession(endingTrace, endReason, false, result.Detail);
             _ = await _probeClient.SendAsync(_probeClient.CreateCommand("shutdown"), TimeSpan.FromSeconds(5)).ConfigureAwait(true);
         }
+        _hpTraceDisarmPending = false;
         AddLog(HpTraceStateText.Text);
+        UpdateHpTracePresentation();
+    }
+
+    private void LogHpTraceArmed(HpWriteTraceSession trace)
+    {
+        AddLog(
+            $"HP TRACE ARMED\n" +
+            $"Slot: {trace.Slot}\nGeneration: {trace.SlotGeneration}\nBattleInstanceId: {trace.BattleInstanceId}\nIdentityKey: {trace.IdentityKey}\n" +
+            $"ActorAddress: 0x{trace.ActorAddress:X16}\nCurrentHealthOffset: 0x{trace.TargetOffset:X}\nWatchedAddress: 0x{trace.TargetAddress:X16}\n" +
+            $"HP at arm: {trace.CurrentHealthAtArm:G9}\nMax HP: {trace.MaximumHealthAtArm:G9}\n" +
+            $"Health percent: {(trace.CurrentHealthAtArm / trace.MaximumHealthAtArm):P2}\nArm QPC: {trace.StartedQpc}\n" +
+            $"TraceSessionId: {trace.TraceSessionId}\nWatchId: {trace.WatchId}\n" +
+            $"Stimulus: {trace.Stimulus}\n" +
+            $"Eligible threads: {trace.InstrumentedThreadCount}\n" +
+            $"Instrumented threads: {trace.InstrumentedThreadCount}\n" +
+            $"Conflict threads: 0");
+    }
+
+    private void LogHardwareWriteTrap(ProbeEventMessage traceEvent, HpWriteTraceSession trace)
+    {
+        RecordWriterEvidence(traceEvent);
+        static ulong Register(IReadOnlyList<ulong> registers, int index) => index < registers.Count ? registers[index] : 0;
+        string[] names = ["RAX", "RBX", "RCX", "RDX", "RSI", "RDI", "RBP", "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15"];
+        string registerText = string.Join("\n", names.Select((name, index) =>
+            $"{name}: 0x{Register(traceEvent.Registers, index):X16}"));
+        string correlations =
+            $"RCX -> {CorrelateFighter(Register(traceEvent.Registers, 2), traceEvent.MonotonicTicks)}\n" +
+            $"RDX -> {CorrelateFighter(Register(traceEvent.Registers, 3), traceEvent.MonotonicTicks)}";
+        AddLog(
+            $"HARDWARE WRITE TRAP\nSequence: {traceEvent.Sequence}\nTraceSessionId: {traceEvent.TraceSessionId}\nWatchId: {traceEvent.WatchId}\n" +
+            $"ThreadId: {traceEvent.ThreadId}\nTrapRip: 0x{traceEvent.TrapRip:X16}\nNormalizedTrapRip / code context: {traceEvent.Origin}\n" +
+            $"WatchedAddress: 0x{trace.TargetAddress:X16}\nAccessWidth: {traceEvent.AccessWidth}\nAccessType: Write\n" +
+            $"XMM{traceEvent.SimdRegister0}.scalar: {BitConverter.Int32BitsToSingle(unchecked((int)traceEvent.SimdScalarBits0)):G9} " +
+            $"(0x{traceEvent.SimdScalarBits0:X8})\n" +
+            $"XMM{traceEvent.SimdRegister1}.scalar: {BitConverter.Int32BitsToSingle(unchecked((int)traceEvent.SimdScalarBits1)):G9} " +
+            $"(0x{traceEvent.SimdScalarBits1:X8})\n" +
+            $"DR6: 0x{traceEvent.Dr6:X16}\nDR7: 0x{traceEvent.Dr7:X16}\n{registerText}\nFighter correlations:\n{correlations}");
+    }
+
+    private void RecordWriterEvidence(ProbeEventMessage traceEvent)
+    {
+        string key = traceEvent.Origin;
+        if (!_hpWriterEvidence.TryGetValue(key, out WriterEvidence? evidence))
+        {
+            evidence = new WriterEvidence
+            {
+                Origin = traceEvent.Origin,
+                TrapRip = traceEvent.TrapRip,
+                FirstScalar0Bits = traceEvent.SimdScalarBits0,
+                FirstScalar1Bits = traceEvent.SimdScalarBits1
+            };
+            _hpWriterEvidence.Add(key, evidence);
+        }
+        evidence.Count++;
+        evidence.LastScalar0Bits = traceEvent.SimdScalarBits0;
+        evidence.LastScalar1Bits = traceEvent.SimdScalarBits1;
+        evidence.Scalar0BitCounts[traceEvent.SimdScalarBits0] =
+            evidence.Scalar0BitCounts.GetValueOrDefault(traceEvent.SimdScalarBits0) + 1;
+    }
+
+    private void DetectHpSubtractionAndScheduleAutoDisarm(ProbeEventMessage traceEvent, HpWriteTraceSession trace)
+    {
+        float resultingHealth = BitConverter.Int32BitsToSingle(unchecked((int)traceEvent.SimdScalarBits0));
+        float subtraction = BitConverter.Int32BitsToSingle(unchecked((int)traceEvent.SimdScalarBits1));
+        float referenceHealth = _hpTraceLastDetectedHealth ?? trace.CurrentHealthAtArm;
+        float reconstructedHealth = resultingHealth + subtraction;
+        float tolerance = Math.Max(0.01f, Math.Abs(referenceHealth) * 0.0002f);
+        if (!float.IsFinite(resultingHealth) || !float.IsFinite(subtraction) ||
+            resultingHealth <= 0 || subtraction <= 0 || resultingHealth >= referenceHealth ||
+            Math.Abs(reconstructedHealth - referenceHealth) > tolerance)
+        {
+            return;
+        }
+
+        _hpTraceLastDetectedHealth = resultingHealth;
+        _hpTraceDetectedSubtractionCount++;
+        AddLog($"HP subtraction detected: {referenceHealth:G9} - {subtraction:G9} = {resultingHealth:G9}; " +
+            $"auto-disarm quiet timer restarted (event {_hpTraceDetectedSubtractionCount}).");
+        if (HpTraceAutoDisarmCheckBox.IsChecked != true) return;
+
+        CancelHpAutoDisarm();
+        _hpAutoDisarmCancellation = CancellationTokenSource.CreateLinkedTokenSource(_windowLifetime.Token);
+        _ = AutoDisarmAfterDamageQuietPeriodAsync(trace.TraceSessionId, trace.WatchId, _hpAutoDisarmCancellation.Token);
+    }
+
+    private async Task AutoDisarmAfterDamageQuietPeriodAsync(
+        ulong traceSessionId, ulong watchId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(900), cancellationToken).ConfigureAwait(true);
+            if (_hpTraceSession is not { } trace || trace.TraceSessionId != traceSessionId || trace.WatchId != watchId)
+                return;
+            await DisarmHpTraceAsync(
+                $"HP write trace auto-disarmed after {_hpTraceDetectedSubtractionCount} detected subtraction event(s).",
+                "AutoDisarmAfterDamage").ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+    }
+
+    private void CancelHpAutoDisarm()
+    {
+        _hpAutoDisarmCancellation?.Cancel();
+        _hpAutoDisarmCancellation?.Dispose();
+        _hpAutoDisarmCancellation = null;
+    }
+
+    private void CompleteHpTraceSession(
+        HpWriteTraceSession? trace, string endReason, bool disarmSucceeded, string disarmDetail)
+    {
+        if (trace is null || _hpTraceSummaryWritten) return;
+        CancelHpAutoDisarm();
+        FighterRow? live = _fighterBySlot.TryGetValue(trace.Slot, out FighterRow? candidate) &&
+            candidate.IdentityKey == trace.IdentityKey ? candidate : null;
+        float? hpAtEnd = live?.CurrentHealth;
+        float? maximumAtEnd = live?.MaximumHealth;
+        float? delta = hpAtEnd - trace.CurrentHealthAtArm;
+        ProbeStatusMessage? status = _lastProbeStatus;
+        string classification = !delta.HasValue
+            ? "Insufficient HP evidence to classify this trace."
+            : delta.Value == 0
+                ? _hpTraceDetectedSubtractionCount > 0
+                    ? $"End-state HP returned to baseline after {_hpTraceDetectedSubtractionCount} captured subtraction event(s). " +
+                      "Transient damage and later recovery are both present; causal writer evidence is retained."
+                    : "No HP change observed on selected target. No hardware trap was required for this test."
+                : _hpTraceCapturedEventCount > 0
+                    ? "Selected fighter HP changed and at least one hardware write trap was captured. WATCHPOINT GATE FIRED."
+                    : "Selected fighter HP changed without a captured hardware write trap. WATCHPOINT DIAGNOSTIC REQUIRED.";
+        string hpEndText = hpAtEnd.HasValue
+            ? $"{hpAtEnd.Value:G9} / {maximumAtEnd.GetValueOrDefault():G9}"
+            : "unavailable - target generation released or passive Runtime disconnected";
+        string deltaText = delta.HasValue ? delta.Value.ToString("+0.########;-0.########;0") : "unavailable";
+        uint? finalHpBits = hpAtEnd.HasValue && delta.HasValue && delta.Value != 0
+            ? unchecked((uint)BitConverter.SingleToInt32Bits(hpAtEnd.Value))
+            : null;
+        string writerSummary = string.Join("\n", _hpWriterEvidence.Values
+            .OrderByDescending(evidence => finalHpBits.HasValue && evidence.Scalar0BitCounts.ContainsKey(finalHpBits.Value))
+            .ThenBy(evidence => evidence.Count)
+            .Select(evidence =>
+            {
+                int exactMatches = finalHpBits.HasValue
+                    ? evidence.Scalar0BitCounts.GetValueOrDefault(finalHpBits.Value)
+                    : 0;
+                float first0 = BitConverter.Int32BitsToSingle(unchecked((int)evidence.FirstScalar0Bits));
+                float last0 = BitConverter.Int32BitsToSingle(unchecked((int)evidence.LastScalar0Bits));
+                float first1 = BitConverter.Int32BitsToSingle(unchecked((int)evidence.FirstScalar1Bits));
+                float last1 = BitConverter.Int32BitsToSingle(unchecked((int)evidence.LastScalar1Bits));
+                return $"RIP 0x{evidence.TrapRip:X16} | count {evidence.Count} | final-HP XMM0 matches {exactMatches} | " +
+                    $"XMM0 {first0:G9}->{last0:G9} | XMM6 {first1:G9}->{last1:G9} | {evidence.Origin}";
+            }));
+        if (string.IsNullOrEmpty(writerSummary)) writerSummary = "No writer events captured.";
+        AddLog(
+            $"HP TRACE ENDED\nEndReason: {endReason}\nSlot: {trace.Slot}\nGeneration: {trace.SlotGeneration}\n" +
+            $"BattleInstanceId: {trace.BattleInstanceId}\nStimulus: {trace.Stimulus}\nIdentityKey: {trace.IdentityKey}\nActorAddress: 0x{trace.ActorAddress:X16}\n" +
+            $"WatchedAddress: 0x{trace.TargetAddress:X16}\nHP at arm: {trace.CurrentHealthAtArm:G9} / {trace.MaximumHealthAtArm:G9}\n" +
+            $"HP at end: {hpEndText}\nHP delta: {deltaText}\nHardwareWriteTrap count: {_hpTraceCapturedEventCount}\n" +
+            $"Detected subtraction events: {_hpTraceDetectedSubtractionCount}\n" +
+            $"Eligible threads at end: {status?.EligibleThreadCount ?? 0}\nInstrumented threads at end: {status?.InstrumentedThreadCount ?? 0}\n" +
+            $"Exited threads since arm: {status?.ExitedThreadCount ?? 0}\nNewly instrumented threads: {status?.NewlyArmedThreadCount ?? 0}\n" +
+            $"Conflict threads: {status?.ConflictThreadCount ?? 0}\nDisarm result: {(disarmSucceeded ? "Success" : "Failed")}\n" +
+            $"Disarm detail: {disarmDetail}\nHP TRACE RESULT:\n{classification}\nWRITER EVIDENCE SUMMARY:\n{writerSummary}");
+        _lastHpTraceSession = trace;
+        _hpTraceEndDetail = $"{endReason}: {classification}";
+        _hpTraceSession = null;
+        _hpTraceSummaryWritten = true;
+    }
+
+    private void UpdateHpTracePresentation()
+    {
+        HpWriteTraceSession? trace = _hpTraceSession ?? _lastHpTraceSession;
+        FighterRow? selected = HpTraceFighterList.SelectedItem as FighterRow;
+        if (_hpTraceSession is null && selected is not null)
+        {
+            ulong target = checked(selected.ActorAddress + RuntimeProtocol.CurrentHealthOffset);
+            HpTraceTargetText.Text =
+                $"✓ HP TRACE TARGET · Slot {selected.Slot} · Generation {selected.SlotGeneration} · Battle {selected.BattleInstanceId} · " +
+                $"Actor 0x{selected.ActorAddress:X16} · HP {selected.CurrentHealth:N0} / {selected.MaximumHealth:N0} · " +
+                $"Battle_Mob + 0x{RuntimeProtocol.CurrentHealthOffset:X} = 0x{target:X16}";
+        }
+        else if (_hpTraceSession is null && selected is null)
+        {
+            HpTraceTargetText.Text = $"Select a live fighter generation. Target: Battle_Mob + 0x{RuntimeProtocol.CurrentHealthOffset:X}.";
+        }
+
+        ArmHpTraceButton.IsEnabled = _probeReady && _hpTraceSession is null && selected is not null;
+        HpTraceFighterList.IsEnabled = _hpTraceSession is null;
+        if (trace is null)
+        {
+            HpTraceSummaryBanner.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        bool isActive = _hpTraceSession is not null;
+        FighterRow? live = _fighterBySlot.TryGetValue(trace.Slot, out FighterRow? candidate) &&
+            candidate.IdentityKey == trace.IdentityKey ? candidate : null;
+        float? currentHealth = live?.CurrentHealth;
+        float? currentMaximum = live?.MaximumHealth;
+        float? delta = currentHealth - trace.CurrentHealthAtArm;
+
+        HpTraceSummaryBanner.Visibility = Visibility.Visible;
+        HpTraceSummaryBanner.Background = (Brush)FindResource(isActive
+            ? "TraceTargetBackgroundBrush"
+            : "ReleasedTargetBackgroundBrush");
+        HpTraceSummaryBanner.BorderBrush = (Brush)FindResource(isActive
+            ? "TraceTargetBorderBrush"
+            : "WarningBrush");
+        HpTraceBannerTitleText.Text = isActive ? "HP WRITE TRACE — ARMED" : "HP TRACE ENDED";
+        HpTraceBannerTargetText.Text =
+            $"TARGET  Slot {trace.Slot} · Generation {trace.SlotGeneration} · Battle {trace.BattleInstanceId}\n" +
+            $"Actor  0x{trace.ActorAddress:X16}\nWatching  0x{trace.TargetAddress:X16}  (Battle_Mob + 0x{trace.TargetOffset:X})\n" +
+            $"Threads  eligible {(_lastProbeStatus?.EligibleThreadCount ?? 0):N0} · instrumented {(_lastProbeStatus?.InstrumentedThreadCount ?? trace.InstrumentedThreadCount):N0} · " +
+            $"new {(_lastProbeStatus?.NewlyArmedThreadCount ?? 0):N0} · exited {(_lastProbeStatus?.ExitedThreadCount ?? 0):N0} · conflicts {(_lastProbeStatus?.ConflictThreadCount ?? 0):N0}\n" +
+            $"Trace {trace.TraceSessionId:N0} · Watch {trace.WatchId:N0}";
+        HpTraceBannerHealthText.Text =
+            $"HP at arm  {trace.CurrentHealthAtArm:N0} / {trace.MaximumHealthAtArm:N0}\n" +
+            (currentHealth.HasValue
+                ? $"Current HP  {currentHealth:N0} / {currentMaximum:N0}\nDelta  {delta:+0;-0;0}"
+                : "Current HP  unavailable · target generation is no longer live");
+
+        string evidence = !string.IsNullOrWhiteSpace(_hpTraceEndDetail) && !isActive
+            ? _hpTraceEndDetail
+            : !delta.HasValue || delta.Value == 0
+                ? $"HP events captured: {_hpTraceCapturedEventCount:N0} · HP unchanged. No trap expected yet."
+                : _hpTraceCapturedEventCount > 0
+                    ? $"HP events captured: {_hpTraceCapturedEventCount:N0} · HP changed. Trap captured."
+                    : "HP events captured: 0 · HP changed without captured hardware event. Diagnostic review required.";
+        HpTraceBannerResultText.Text = evidence;
+        HpTraceBannerResultText.Foreground = (Brush)FindResource(
+            delta.HasValue && delta.Value != 0 && _hpTraceCapturedEventCount == 0 ? "WarningBrush" : "PrimaryTextBrush");
     }
 
     private async void TestTraceTransportButton_Click(object sender, RoutedEventArgs e) => await RunTransportTestAsync("normal", 1, 0).ConfigureAwait(true);
